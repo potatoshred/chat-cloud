@@ -46,6 +46,35 @@ export const storageJson = async <T>(path: string, method = 'GET', value?: unkno
     })
   ).json() as Promise<T>
 
+/**
+ * Retry an idempotent storage operation on transient failures. Cloudflare Tunnel can drop a
+ * request body in flight, which the server reports as 400 "JSON 格式无效"; the body is rebuilt
+ * by `run` on each attempt. Pass extra statuses (e.g. 400) when the caller's data is validated.
+ */
+export const retryStorage = async <T>(
+  run: () => Promise<T>,
+  extraStatuses: readonly number[] = [],
+  attempts = 8
+): Promise<T> => {
+  const retryable = new Set([408, 429, 500, 502, 503, 504, ...extraStatuses])
+  let lastError: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await run()
+    } catch (error) {
+      lastError = error
+      if (i === attempts - 1) {
+        break
+      }
+      if (error instanceof StorageError && !retryable.has(error.status)) {
+        break
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(300 * 2 ** i, 3000)))
+    }
+  }
+  throw lastError
+}
+
 export const storageFailure = (error: unknown) => {
   showToast(error instanceof Error ? error.message : '服务端保存失败，请检查网络后重试。')
 }

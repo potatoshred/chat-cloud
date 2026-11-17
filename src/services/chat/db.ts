@@ -3,6 +3,7 @@ import * as local from './localDb.js'
 import * as server from './serverDb.js'
 
 export type { StoredFile } from './localDb.js'
+export type { ImportMode } from './types.js'
 const storage = SERVER_API ? server : local
 export const {
   loadSessionSummaries,
@@ -14,6 +15,7 @@ export const {
   loadFile,
   clearStaging,
   addStagingSession,
+  addStagingSessions,
   saveStagingFiles,
   updateStagingFileTypes,
   commitStaging,

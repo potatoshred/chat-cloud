@@ -138,7 +138,12 @@ export function createDataStore(filename) {
       db.exec('COMMIT')
       return result
     } catch (error) {
-      db.exec('ROLLBACK')
+      try {
+        db.exec('ROLLBACK')
+      } catch {
+        // The statement may have already ended the transaction (e.g. an implicit rollback).
+        // Do not mask the original error with a secondary rollback failure.
+      }
       throw error
     }
   }
@@ -393,19 +398,45 @@ export function createDataStore(filename) {
         }
         checkImport(id)
         if (parts.length === 3 && operation === 'commit' && method === 'POST') {
+          // mode lives in an optional JSON body. Legacy clients send no body / no Content-Type,
+          // which defaults to 'replace' so their behavior (and "clear all = empty replace") is unchanged.
+          const hasJson = request.headers['content-type']?.split(';')[0] === 'application/json'
+          const input = hasJson ? await body(request, 4096) : {}
+          const mode = object(input) && input.mode !== undefined ? input.mode : 'replace'
+          if (mode !== 'append' && mode !== 'replace') fail(400, '导入模式无效。')
           const result = transaction(() => {
             if (checkImport(id).version !== getMeta('version')) conflict()
-            db.exec('DELETE FROM sessions; DELETE FROM files; DELETE FROM drafts;')
-            db.prepare(
-              'INSERT INTO sessions SELECT id,json,lower(hex(randomblob(16))) FROM staged_sessions WHERE owner=?'
-            ).run(id)
-            db.prepare(
-              'INSERT INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?'
-            ).run(id)
+            let importedCount = 0
+            let skippedCount = 0
+            if (mode === 'append') {
+              // Keep every existing chat, draft and original. Import only ids not already present.
+              skippedCount = db
+                .prepare(
+                  'SELECT COUNT(*) AS n FROM staged_sessions s JOIN sessions t ON t.id=s.id WHERE s.owner=?'
+                )
+                .get(id).n
+              importedCount = db.prepare('SELECT COUNT(*) AS n FROM staged_sessions WHERE owner=?').get(id).n - skippedCount
+              db.prepare(
+                `INSERT INTO sessions(id,json,revision)
+                 SELECT s.id,s.json,lower(hex(randomblob(16))) FROM staged_sessions s
+                 WHERE s.owner=? AND NOT EXISTS (SELECT 1 FROM sessions t WHERE t.id=s.id)`
+              ).run(id)
+              // Originals are immutable by id; OR IGNORE preserves existing/shared originals.
+              db.prepare(
+                'INSERT OR IGNORE INTO files(id,mime,bytes) SELECT id,mime,bytes FROM staged_files WHERE owner=?'
+              ).run(id)
+            } else {
+              db.exec('DELETE FROM sessions; DELETE FROM files; DELETE FROM drafts;')
+              db.prepare(
+                'INSERT INTO sessions SELECT id,json,lower(hex(randomblob(16))) FROM staged_sessions WHERE owner=?'
+              ).run(id)
+              db.prepare('INSERT INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?').run(id)
+              importedCount = db.prepare('SELECT COUNT(*) AS n FROM staged_sessions WHERE owner=?').get(id).n
+            }
             db.prepare('DELETE FROM imports WHERE id=?').run(id)
             setMeta('generation', randomUUID())
             changed()
-            return state()
+            return { ...state(), importedCount, skippedCount }
           })
           json(response, result)
           return
@@ -431,6 +462,21 @@ export function createDataStore(filename) {
               )
             }
           })
+          json(response, { ok: true })
+          return
+        }
+        if (parts.length === 3 && operation === 'sessions' && method === 'PUT') {
+          // Batch staging: one request carries many sessions so a large history does not need
+          // thousands of round trips (each of which can be dropped by the tunnel). Staging is
+          // temporary and cleared on failure, so idempotent per-row upserts need no transaction.
+          const sessions = await body(request, 64 * MiB)
+          if (!Array.isArray(sessions)) fail(400, '请求格式无效。')
+          checkImport(id)
+          const insert = db.prepare('INSERT OR REPLACE INTO staged_sessions VALUES (?,?,?)')
+          for (const session of sessions) {
+            validateSession(session, session?.id)
+            insert.run(id, session.id, JSON.stringify(session))
+          }
           json(response, { ok: true })
           return
         }

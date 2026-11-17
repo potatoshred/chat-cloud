@@ -1,6 +1,11 @@
-import { StorageError, storageJson, storageRequest } from '../serverStorage.js'
+import {
+  retryStorage,
+  StorageError,
+  storageJson,
+  storageRequest,
+} from '../serverStorage.js'
 import type { StoredFile } from './localDb.js'
-import type { Session, SessionSummary } from './types.js'
+import type { CommitSummary, ImportMode, Session, SessionSummary } from './types.js'
 
 type Version = { revision: string | null; generation: string }
 export type ServerState = {
@@ -8,6 +13,7 @@ export type ServerState = {
   version: string
   sessions: (SessionSummary & { revision: string })[]
 }
+export type CommitResult = ServerState & { importedCount: number; skippedCount: number }
 let generation = ''
 export const getKnownGeneration = () => generation
 const versions = new Map<string, Version>()
@@ -49,19 +55,30 @@ export const loadSession = async (id: string): Promise<Session | undefined> => {
     throw error
   }
 }
-const putFiles = async (files: StoredFile[], prefix = 'files', currentGeneration = generation) => {
+const putFiles = async (
+  files: StoredFile[],
+  prefix = 'files',
+  currentGeneration = generation,
+  retry = false
+) => {
   for (const file of files) {
     if (prefix === 'files' && uploadedFiles.get(file.id) === currentGeneration) {
       continue
     }
-    await storageRequest(path(prefix, file.id), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': file.blob.type || 'application/octet-stream',
-        'X-Chat-Generation': currentGeneration,
-      },
-      body: file.blob,
-    })
+    const upload = () =>
+      storageRequest(path(prefix, file.id), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.blob.type || 'application/octet-stream',
+          'X-Chat-Generation': currentGeneration,
+        },
+        body: file.blob,
+      })
+    if (retry) {
+      await retryStorage(upload)
+    } else {
+      await upload()
+    }
     if (prefix === 'files') {
       uploadedFiles.set(file.id, currentGeneration)
     }
@@ -121,25 +138,38 @@ const staging = async () => {
 export const clearStaging = async (): Promise<void> => {
   await queue
   if (stagingId) {
-    await storageJson(`imports/${stagingId}`, 'DELETE')
+    await retryStorage(() => storageJson(`imports/${stagingId}`, 'DELETE'))
   }
   stagingId = undefined
-  await staging()
+  // Do not eagerly create a new task here: staging() creates one lazily on first write.
+  // Eager creation leaked a never-used task on every failed import (capped at 8 by the server).
 }
 export const addStagingSession = async (session: Session): Promise<void> => {
-  await storageJson(path(`${await staging()}/sessions`, session.id), 'PUT', session)
+  await retryStorage(
+    async () => storageJson(path(`${await staging()}/sessions`, session.id), 'PUT', session),
+    [400]
+  )
+}
+/** 批量写入会话暂存：一次请求携带多个会话，减少经过隧道的请求数量。 */
+export const addStagingSessions = async (sessions: Session[]): Promise<void> => {
+  await retryStorage(async () => storageJson(`${await staging()}/sessions`, 'PUT', sessions), [400])
 }
 export const saveStagingFiles = async (files: StoredFile[]): Promise<void> =>
-  putFiles(files, `${await staging()}/files`)
+  putFiles(files, `${await staging()}/files`, generation, true)
 export const updateStagingFileTypes = async (types: ReadonlyMap<string, string>): Promise<void> => {
-  await storageJson(`${await staging()}/types`, 'PATCH', Object.fromEntries(types))
+  await retryStorage(
+    async () => storageJson(`${await staging()}/types`, 'PATCH', Object.fromEntries(types)),
+    [400]
+  )
 }
-export const commitStaging = async (): Promise<SessionSummary[]> => {
-  const state = await storageJson<ServerState>(`${await staging()}/commit`, 'POST')
+export const commitStaging = async (
+  mode: ImportMode = 'replace'
+): Promise<CommitSummary<SessionSummary & { revision: string }>> => {
+  const state = await storageJson<CommitResult>(`${await staging()}/commit`, 'POST', { mode })
   generation = state.generation
   versions.clear()
   uploadedFiles.clear()
   stagingId = undefined
   window.dispatchEvent(new Event('chat-history-replaced'))
-  return state.sessions
+  return { sessions: state.sessions, importedCount: state.importedCount, skippedCount: state.skippedCount }
 }

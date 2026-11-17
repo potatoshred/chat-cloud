@@ -1,4 +1,6 @@
 import * as db from '../db.js'
+import type { StoredFile } from '../localDb.js'
+import type { Session } from '../types.js'
 import { BackupError, fail } from './errors.js'
 import type { SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, USER_PATH, parseSessionPath, sessionFilesDir } from './paths.js'
@@ -90,6 +92,32 @@ export const importArchive = async (file: File): Promise<void> => {
   let index: SessionIndexEntry[] | undefined
   let currentSessionId: string | undefined
 
+  // 攒批写入，避免每个会话/图片各发一个请求（1400+ 次往返经过隧道，极易被掐断）。
+  // 按条数和累计大小双重上限触发，单批远小于服务端与 nginx 的 64MiB 限制。
+  const BATCH_COUNT = 25
+  const BATCH_BYTES = 12 * 1024 * 1024
+  let pendingSessions: Session[] = []
+  let pendingSessionBytes = 0
+  let pendingFiles: StoredFile[] = []
+  let pendingFileBytes = 0
+
+  const flushSessions = async () => {
+    if (pendingSessions.length === 0) {
+      return
+    }
+    await db.addStagingSessions(pendingSessions)
+    pendingSessions = []
+    pendingSessionBytes = 0
+  }
+  const flushFiles = async () => {
+    if (pendingFiles.length === 0) {
+      return
+    }
+    await db.saveStagingFiles(pendingFiles)
+    pendingFiles = []
+    pendingFileBytes = 0
+  }
+
   const saveImage = async (entry: ArchiveEntry, id: string) => {
     if (stored.has(id)) {
       await skipEntry(entry)
@@ -97,8 +125,12 @@ export const importArchive = async (file: File): Promise<void> => {
     }
     const data = await readEntry(entry)
     const type = imageType(new Uint8Array(await data.slice(0, 16).arrayBuffer()))
-    await db.saveStagingFiles([{ id, blob: new Blob([data], { type }) }])
     stored.set(id, type)
+    pendingFiles.push({ id, blob: new Blob([data], { type }) })
+    pendingFileBytes += data.size
+    if (pendingFiles.length >= BATCH_COUNT || pendingFileBytes >= BATCH_BYTES) {
+      await flushFiles()
+    }
   }
 
   try {
@@ -124,7 +156,11 @@ export const importArchive = async (file: File): Promise<void> => {
         for (const [imagePath, id] of local.images) {
           images.set(imagePath, id)
         }
-        await db.addStagingSession(local.session)
+        pendingSessions.push(local.session)
+        pendingSessionBytes += JSON.stringify(local.session).length
+        if (pendingSessions.length >= BATCH_COUNT || pendingSessionBytes >= BATCH_BYTES) {
+          await flushSessions()
+        }
       } else if (path === INDEX_PATH && !index) {
         index = readSessionIndex(await readJson(entry))
       } else if (
@@ -155,5 +191,8 @@ export const importArchive = async (file: File): Promise<void> => {
   ) {
     fail('backupIncomplete')
   }
+  // 提交前冲刷剩余批次：先会话后图片，与逐条写入的顺序语义一致。
+  await flushSessions()
+  await flushFiles()
   await db.updateStagingFileTypes(stored)
 }

@@ -104,11 +104,11 @@ async function readForm(request) {
 function page({ title, description, content, error = '' }) {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>${escape(title)} · 私人聊天</title>
+<meta name="color-scheme" content="light dark"><title>${escape(title)} · DeepSeek Chat</title>
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
 <link rel="stylesheet" href="/auth/style.css"></head><body>
-<main class="card"><div class="brand"><span class="mark" aria-hidden="true">✦</span><span>私人聊天<span class="brand-note">PERSONAL SPACE</span></span></div>
+<main class="card"><div class="brand"><span class="mark" aria-hidden="true">✦</span><span>DeepSeek Chat<span class="brand-note">PERSONAL SPACE</span></span></div>
 <h1>${escape(title)}</h1><p class="description">${escape(description)}</p>
 ${error ? `<p class="error" role="alert">${escape(error)}</p>` : ''}
 ${content}<p class="footnote">DeepSeek Chat · 仅限本人访问</p></main></body></html>`
@@ -356,7 +356,7 @@ export function createAuthServer(rawConfig, { now = Date.now, apiProxy, dataStor
           json(response, { error: { message: error.message } }, error.status)
         return
       }
-      if (!(error instanceof RequestError)) console.error('Authentication request failed')
+      if (!(error instanceof RequestError)) console.error('Authentication request failed', error)
       if (!response.destroyed && !response.headersSent)
         html(
           response,

@@ -1,5 +1,11 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import { toSessionSummary, type Session, type SessionSummary } from './types.js'
+import {
+  toSessionSummary,
+  type CommitSummary,
+  type ImportMode,
+  type Session,
+  type SessionSummary,
+} from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
 const DB_VERSION = 11
@@ -171,6 +177,12 @@ export const addStagingSession = async (session: Session): Promise<void> => {
   await (await getDB()).add('sessionsStaging', session)
 }
 
+/** 批量写入会话暂存：单个事务写入，减少 IndexedDB 事务数量。 */
+export const addStagingSessions = async (sessions: Session[]): Promise<void> => {
+  const tx = (await getDB()).transaction('sessionsStaging', 'readwrite')
+  await Promise.all([...sessions.map((session) => tx.store.put(session)), tx.done])
+}
+
 export const saveStagingFiles = (files: StoredFile[]): Promise<void> =>
   putFiles('filesStaging', files)
 
@@ -204,32 +216,49 @@ export const updateStagingFileTypes = async (types: ReadonlyMap<string, string>)
 }
 
 /**
- * 导入完成后用暂存替换正式数据：同一事务中替换会话、摘要和原件，并清空暂存。
+ * 导入完成后提交暂存数据：同一事务中写入会话、摘要和原件，并清空暂存。
+ * replace 模式先清空正式数据再整批移入；append 模式保留现有数据，只移入尚不存在的会话/原件。
  * 逐条游标复制，同一时间只读取一条记录；事务失败时整体回滚，正式数据不变。
  */
-export const commitStaging = async (): Promise<SessionSummary[]> => {
+export const commitStaging = async (mode: ImportMode = 'replace'): Promise<CommitSummary> => {
   const summaries: SessionSummary[] = []
+  let importedCount = 0
+  let skippedCount = 0
   const tx = (await getDB()).transaction(
     ['sessions', 'sessionSummaries', 'files', 'sessionsStaging', 'filesStaging'],
     'readwrite'
   )
+  const existingSessionIds = mode === 'append' ? new Set(await tx.objectStore('sessions').getAllKeys()) : null
   const move = async (from: 'sessionsStaging' | 'filesStaging', to: 'sessions' | 'files') => {
     try {
       const target = tx.objectStore(to)
-      await target.clear()
-      if (to === 'sessions') {
-        await tx.objectStore('sessionSummaries').clear()
+      if (mode === 'replace') {
+        await target.clear()
+        if (to === 'sessions') {
+          await tx.objectStore('sessionSummaries').clear()
+        }
       }
       for (
         let cursor = await tx.objectStore(from).openCursor();
         cursor;
         cursor = await cursor.continue()
       ) {
+        const id = cursor.key
+        if (mode === 'append') {
+          if (to === 'sessions' && existingSessionIds?.has(id as string)) {
+            skippedCount++
+            continue
+          }
+          if (to === 'files' && (await tx.objectStore('files').get(id))) {
+            continue
+          }
+        }
         await target.put(cursor.value)
         if (to === 'sessions') {
           const summary = storedSummary(cursor.value as Session)
           await tx.objectStore('sessionSummaries').put(summary)
           summaries.push(toSessionSummary(summary))
+          importedCount++
         }
       }
       await tx.objectStore(from).clear()
@@ -240,8 +269,13 @@ export const commitStaging = async (): Promise<SessionSummary[]> => {
     }
   }
   await Promise.all([move('sessionsStaging', 'sessions'), move('filesStaging', 'files'), tx.done])
+  // 与服务端 commit 保持一致：返回提交后的完整会话列表（追加模式含原有 + 新增）。
+  if (mode === 'append') {
+    const all = await (await getDB()).getAll('sessionSummaries')
+    return { sessions: all.map(toSessionSummary), importedCount, skippedCount }
+  }
   // 直接返回本次提交的列表，调用方无需在替换成功后再发起可能失败的读取。
-  return summaries
+  return { sessions: summaries, importedCount, skippedCount }
 }
 
 /** 本地存储失败不打断对话，只在控制台留痕 */

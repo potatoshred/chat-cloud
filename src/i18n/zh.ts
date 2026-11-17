@@ -16,7 +16,7 @@ export const zh = {
     : '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
   sessionDeleteFailed: '删除对话失败，请重试',
   settings: '设置',
-  appName: 'API 使用 demo',
+  appName: 'DeepSeek Chat',
   deleteSessionModalContentTitle: '永久删除对话',
   deleteSessionWithFilesDescription: '删除后，该对话及其中上传的文件将不可恢复。确认删除吗？',
   cancel: '取消',
@@ -113,14 +113,21 @@ export const zh = {
   apiKeyInvalid: 'API Key 无效，请检查后重试',
   apiKeyVerificationFailed: '校验失败：{message}',
   historyImport: '导入历史对话',
-  historyImportConfirm: '确认导入',
+  historyImportConfirm: '确认追加导入',
   historyImportConfirmTitle: '确认导入历史对话？',
-  historyImportConfirmDescription: SERVER_API
-    ? '导入会覆盖服务端所有对话及草稿，所有设备都会受影响。是否确认导入？'
-    : '上传的历史对话会覆盖当前所有对话记录，是否确认导入？',
+  historyImportMode: '导入方式',
+  historyImportModeAppend: '追加（推荐）',
+  historyImportModeAppendDescription: '保留现有对话、草稿和附件原件，仅导入 ID 不同的新对话；同 ID 对话保持原样。',
+  historyImportModeReplace: '覆盖（危险）',
+  historyImportModeReplaceDescription: '删除全部对话、附件和草稿后导入，所有设备都会受影响。',
+  historyImportConfirmDescriptionAppend: '将保留现有对话与草稿，只导入新对话。是否确认？',
+  historyImportConfirmDescriptionReplace: SERVER_API
+    ? '导入会覆盖服务端所有对话及草稿，所有设备都会受影响。是否确认？'
+    : '导入会覆盖当前所有对话及草稿。是否确认？',
+  historyImportConfirmReplace: '确认覆盖导入',
   historyImportDescription: SERVER_API
-    ? '历史保存在服务端，各设备共享。导入会覆盖全部对话和附件，支持 DeepSeek 导出的 ZIP。'
-    : '导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。',
+    ? '历史保存在服务端，各设备共享。默认追加新对话、保留现有数据，也可选择覆盖全部。支持 DeepSeek 导出的 ZIP。'
+    : '默认追加新对话、保留现有数据，也可选择覆盖全部本地对话和附件。支持 DeepSeek 导出的 ZIP 文件。',
   historyImportedOne: '已导入 1 个对话',
   historyImported: '已导入 {count} 个对话',
   historyImportFailed:

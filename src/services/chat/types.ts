@@ -116,6 +116,16 @@ export type Session = {
   rootMessageId?: string | null
 }
 
+/** 历史导入方式：追加（跳过同 ID、保留现有数据）或覆盖（替换全部历史）。 */
+export type ImportMode = 'append' | 'replace'
+
+/** commit 的结果：提交后的完整会话列表 + 本次新增/跳过数量。 */
+export type CommitSummary<T extends SessionSummary = SessionSummary> = {
+  sessions: T[]
+  importedCount: number
+  skippedCount: number
+}
+
 /** 会话列表元数据；消息只在打开会话时加载。 */
 export type SessionSummary = Pick<Session, 'id' | 'title' | 'createdAt' | 'updatedAt'>
 

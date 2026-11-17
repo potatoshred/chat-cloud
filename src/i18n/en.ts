@@ -18,7 +18,7 @@ export const en = {
     : 'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
   settings: 'Settings',
-  appName: 'API usage demo',
+  appName: 'DeepSeek Chat',
   deleteSessionModalContentTitle: 'Delete chat?',
   deleteSessionWithFilesDescription:
     'This chat and its uploaded files will be permanently deleted and cannot be recovered. Delete this chat?',
@@ -118,14 +118,24 @@ export const en = {
   apiKeyInvalid: 'Invalid API Key. Please check it and try again.',
   apiKeyVerificationFailed: 'Verification failed: {message}',
   historyImport: 'Import chat history',
-  historyImportConfirm: 'Import',
+  historyImportConfirm: 'Append and import',
   historyImportConfirmTitle: 'Import chat history?',
-  historyImportConfirmDescription: SERVER_API
-    ? 'This replaces all server chats and drafts on every device. Import anyway?'
-    : 'The uploaded chat history will replace all your current chats. Import anyway?',
+  historyImportMode: 'Import mode',
+  historyImportModeAppend: 'Append (recommended)',
+  historyImportModeAppendDescription:
+    'Keep existing chats, drafts and originals; import only chats with new IDs. Chats with the same ID stay unchanged.',
+  historyImportModeReplace: 'Replace (dangerous)',
+  historyImportModeReplaceDescription:
+    'Delete all chats, attachments and drafts before importing. Affects every device.',
+  historyImportConfirmDescriptionAppend:
+    'Existing chats and drafts are kept; only new chats are imported. Continue?',
+  historyImportConfirmDescriptionReplace: SERVER_API
+    ? 'This replaces all server chats and drafts on every device. Continue?'
+    : 'This replaces all your current chats and drafts. Continue?',
+  historyImportConfirmReplace: 'Replace and import',
   historyImportDescription: SERVER_API
-    ? 'History is stored on the server and shared across devices. Import replaces all chats and attachments. Supports DeepSeek ZIP files.'
-    : 'Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.',
+    ? 'History is stored on the server and shared across devices. By default new chats are appended and existing data is kept; replacing all is also available. Supports DeepSeek ZIP files.'
+    : 'By default new chats are appended and existing data is kept; replacing all local chats and attachments is also available. Supports ZIP files exported from DeepSeek.',
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
   historyImportFailed:

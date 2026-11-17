@@ -416,6 +416,61 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.importModeOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.importModeOption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background-color: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  &:hover,
+  &.importModeOptionSelected {
+    background-color: var(--dsw-specific-selector);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+
+  &.importModeOptionDanger.importModeOptionSelected {
+    border-color: var(--dsw-alias-state-error-primary);
+  }
+}
+
+.importModeLabel {
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.importModeOptionDanger .importModeLabel {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.importModeDescription {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .deleteConfirm {
   max-height: calc(100dvh - 32px);
   overflow-y: auto;

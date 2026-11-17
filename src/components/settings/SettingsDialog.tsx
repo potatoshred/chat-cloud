@@ -17,6 +17,7 @@ import {
 } from '../../services/chat/backup.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
+import type { ImportMode } from '../../services/chat/types.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
   isChineseBrowser,
@@ -319,13 +320,29 @@ const TtsVoiceSetting = () => {
   )
 }
 
-/** 覆盖导入的二次确认，叠在设置弹窗上 */
+const importModes: { value: ImportMode; label: TranslationKey; description: TranslationKey; danger?: boolean }[] = [
+  {
+    value: 'append',
+    label: 'historyImportModeAppend',
+    description: 'historyImportModeAppendDescription',
+  },
+  {
+    value: 'replace',
+    label: 'historyImportModeReplace',
+    description: 'historyImportModeReplaceDescription',
+    danger: true,
+  },
+]
+
+/** 导入的二次确认，叠在设置弹窗上：选择追加或覆盖后再确认。 */
 const ImportConfirm = ({
   historyImport,
 }: {
   historyImport: ReturnType<typeof useHistoryImport>
 }) => {
   const t = useTranslate()
+  const { mode, setMode } = historyImport
+  const replace = mode === 'replace'
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
@@ -336,13 +353,38 @@ const ImportConfirm = ({
           <Button variant="outlined" size="m" autoFocus onClick={historyImport.cancel}>
             {t('cancel')}
           </Button>
-          <Button variant="dangerOutlined" size="m" onClick={() => void historyImport.confirm()}>
-            {t('historyImportConfirm')}
+          <Button
+            variant={replace ? 'dangerOutlined' : 'primary'}
+            size="m"
+            onClick={() => void historyImport.confirm()}
+          >
+            {t(replace ? 'historyImportConfirmReplace' : 'historyImportConfirm')}
           </Button>
         </>
       }
     >
-      <div className={styles.importConfirmText}>{t('historyImportConfirmDescription')}</div>
+      <div className={styles.importConfirmText}>
+        {t(replace ? 'historyImportConfirmDescriptionReplace' : 'historyImportConfirmDescriptionAppend')}
+      </div>
+      <div role="radiogroup" aria-label={t('historyImportMode')} className={styles.importModeOptions}>
+        {importModes.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={mode === option.value}
+            className={clsx(
+              styles.importModeOption,
+              mode === option.value && styles.importModeOptionSelected,
+              option.danger && styles.importModeOptionDanger
+            )}
+            onClick={() => setMode(option.value)}
+          >
+            <span className={styles.importModeLabel}>{t(option.label)}</span>
+            <span className={styles.importModeDescription}>{t(option.description)}</span>
+          </button>
+        ))}
+      </div>
     </Modal>
   )
 }
@@ -441,9 +483,10 @@ const SettingCell = ({
   )
 }
 
-/** 选文件后先提示覆盖；确认后才检查文件并执行导入，任何错误都提示导入失败。 */
+/** 选文件后先选择追加或覆盖并二次确认；确认后才检查文件并执行导入，任何错误都提示导入失败。 */
 const useHistoryImport = () => {
   const [file, setFile] = useState<File | null>(null)
+  const [mode, setMode] = useState<ImportMode>('append')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<Status>(null)
   const importing = useRef(false)
@@ -457,7 +500,7 @@ const useHistoryImport = () => {
     setBusy(true)
     setStatus(null)
     try {
-      const count = await importHistory(file)
+      const count = await importHistory(file, mode)
       setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
     } catch {
       setStatus({ key: 'historyImportFailed', error: true })
@@ -467,10 +510,19 @@ const useHistoryImport = () => {
     }
   }
 
-  return { file, busy, status, select: setFile, cancel: () => setFile(null), confirm }
+  const select = (next: File) => {
+    setMode('append')
+    setFile(next)
+  }
+  const cancel = () => {
+    setMode('append')
+    setFile(null)
+  }
+
+  return { file, mode, setMode, busy, status, select, cancel, confirm }
 }
 
-/** 导入 = 覆盖：用选中文件替换本地全部会话与附件。 */
+/** 导入历史：默认追加新对话，可在确认时选择覆盖。 */
 const ImportHistory = ({
   historyImport,
   disabled,

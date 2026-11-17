@@ -857,3 +857,182 @@ test('imported originals commit with their sessions and deleting a chat preserve
   await f.data('sessions/second-reference', 'DELETE', second)
   assert.equal((await f.request('/data/files/shared-image', { headers: apiHeaders })).status, 404)
 })
+
+test('append import skips duplicate ids, adds new ids, and keeps drafts, revisions and originals', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const state = (await f.data('state')).value
+  const originalGeneration = state.generation
+  // Existing chat with a saved revision, a draft, and an uploaded original.
+  const saved = await f.data('sessions/shared-chat', 'PUT', {
+    generation: originalGeneration,
+    revision: null,
+    session: storedSession(),
+  })
+  assert.equal(saved.status, 200)
+  const existingRevision = saved.value.revision
+  await f.data('drafts/new', 'PUT', {
+    generation: originalGeneration,
+    revision: null,
+    draft: { text: 'keep me', attachments: [] },
+  })
+  const bytesA = Buffer.from([0, 1, 128, 255])
+  assert.equal(
+    (
+      await f.request('/data/files/original', {
+        method: 'PUT',
+        headers: { ...apiHeaders, 'X-Chat-Generation': originalGeneration, 'Content-Type': 'image/png' },
+        body: bytesA,
+      })
+    ).status,
+    200
+  )
+
+  // Staging contains a conflicting copy of shared-chat, a new chat, and a competing original.
+  const id = (await f.data('imports', 'POST')).value.id
+  const conflicting = storedSession('shared-chat')
+  conflicting.title = '恶意覆盖'
+  assert.equal((await f.data(`imports/${id}/sessions/shared-chat`, 'PUT', conflicting)).status, 200)
+  assert.equal((await f.data(`imports/${id}/sessions/imported`, 'PUT', storedSession('imported'))).status, 200)
+  const bytesB = Buffer.from([9, 9, 9, 9])
+  assert.equal(
+    (
+      await f.request(`/data/imports/${id}/files/original`, {
+        method: 'PUT',
+        headers: { ...apiHeaders, 'Content-Type': 'image/png' },
+        body: bytesB,
+      })
+    ).status,
+    200
+  )
+
+  const result = await f.data(`imports/${id}/commit`, 'POST', { mode: 'append' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(
+    result.value.sessions.map((s) => s.id).sort(),
+    ['imported', 'shared-chat']
+  )
+  assert.equal(result.value.importedCount, 1)
+  assert.equal(result.value.skippedCount, 1)
+  assert.notEqual(result.value.generation, originalGeneration)
+
+  // Conflicting chat kept verbatim, including revision.
+  const kept = (await f.data('sessions/shared-chat')).value
+  assert.equal(kept.session.title, '跨设备聊天')
+  assert.equal(kept.revision, existingRevision)
+  assert.equal((await f.data('sessions/imported')).value.session.id, 'imported')
+  // Draft and original preserved.
+  assert.equal((await f.data('drafts')).value.drafts[0].draft.text, 'keep me')
+  const original = await f.request('/data/files/original', { headers: apiHeaders })
+  assert.deepEqual(Buffer.from(await original.arrayBuffer()), bytesA)
+  // Old generation is invalidated.
+  assert.equal(
+    (await f.data('sessions/shared-chat', 'PUT', {
+      generation: originalGeneration,
+      revision: existingRevision,
+      session: kept.session,
+    })).status,
+    409
+  )
+})
+
+test('append import with only duplicate ids changes nothing but still rotates generation and keeps drafts', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const state = (await f.data('state')).value
+  await f.data('sessions/shared-chat', 'PUT', {
+    generation: state.generation,
+    revision: null,
+    session: storedSession(),
+  })
+  await f.data('drafts/new', 'PUT', {
+    generation: state.generation,
+    revision: null,
+    draft: { text: 'draft survives', attachments: [] },
+  })
+  const id = (await f.data('imports', 'POST')).value.id
+  const duplicate = storedSession('shared-chat')
+  duplicate.title = 'should be ignored'
+  await f.data(`imports/${id}/sessions/shared-chat`, 'PUT', duplicate)
+  const result = await f.data(`imports/${id}/commit`, 'POST', { mode: 'append' })
+  assert.equal(result.status, 200)
+  assert.equal(result.value.importedCount, 0)
+  assert.equal(result.value.skippedCount, 1)
+  assert.deepEqual(result.value.sessions.map((s) => s.id), ['shared-chat'])
+  assert.equal((await f.data('sessions/shared-chat')).value.session.title, '跨设备聊天')
+  assert.equal((await f.data('drafts')).value.drafts[0].draft.text, 'draft survives')
+  assert.notEqual(result.value.generation, state.generation)
+})
+
+test('append import still detects concurrent changes during upload', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const state = (await f.data('state')).value
+  await f.data('sessions/shared-chat', 'PUT', {
+    generation: state.generation,
+    revision: null,
+    session: storedSession(),
+  })
+  const id = (await f.data('imports', 'POST')).value.id
+  await f.data(`imports/${id}/sessions/brand-new`, 'PUT', storedSession('brand-new'))
+  const row = (await f.data('sessions/shared-chat')).value
+  await f.data('sessions/shared-chat', 'PATCH', { ...row, title: 'changed during upload' })
+  assert.equal((await f.data(`imports/${id}/commit`, 'POST', { mode: 'append' })).status, 409)
+  assert.equal((await f.data('sessions/shared-chat')).value.session.title, 'changed during upload')
+})
+
+test('commit rejects an unknown import mode and leaves the import intact', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const id = (await f.data('imports', 'POST')).value.id
+  await f.data(`imports/${id}/sessions/imported`, 'PUT', storedSession('imported'))
+  assert.equal((await f.data(`imports/${id}/commit`, 'POST', { mode: 'bogus' })).status, 400)
+  // Import is still committable with a valid mode.
+  const result = await f.data(`imports/${id}/commit`, 'POST', { mode: 'append' })
+  assert.equal(result.status, 200)
+  assert.equal(result.value.importedCount, 1)
+})
+
+test('sessions can be staged in one batch request and committed', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const id = (await f.data('imports', 'POST')).value.id
+  const batch = [storedSession('batch-a'), storedSession('batch-b'), storedSession('batch-c')]
+  assert.equal((await f.data(`imports/${id}/sessions`, 'PUT', batch)).status, 200)
+  // Malformed batch is rejected without staging anything.
+  const bad = (await f.data('imports', 'POST')).value.id
+  assert.equal(
+    (await f.data(`imports/${bad}/sessions`, 'PUT', { id: 'not-an-array' })).status,
+    400
+  )
+  const result = await f.data(`imports/${id}/commit`, 'POST', { mode: 'append' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(
+    result.value.sessions.map((s) => s.id).sort(),
+    ['batch-a', 'batch-b', 'batch-c']
+  )
+  assert.equal(result.value.importedCount, 3)
+  assert.equal(result.value.skippedCount, 0)
+  for (const session of batch) {
+    assert.equal((await f.data(`sessions/${session.id}`)).status, 200)
+  }
+})
+
+test('a malformed session in a batch fails cleanly without leaving the db in a broken transaction state', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  // A batch with one valid and one malformed session must be rejected, and subsequent
+  // unrelated requests must still work (no leaked/rolled-back transaction on the shared connection).
+  const id = (await f.data('imports', 'POST')).value.id
+  const bad = (await f.data('imports', 'POST')).value.id
+  const mixed = [storedSession('ok'), { id: 'broken', messages: 'not-an-array' }]
+  assert.equal((await f.data(`imports/${id}/sessions`, 'PUT', mixed)).status, 400)
+  // Unrelated reads still succeed after the failed batch.
+  assert.equal((await f.data('state')).status, 200)
+  assert.equal((await f.data('drafts')).status, 200)
+  // A fresh batch still stages and commits correctly.
+  assert.equal((await f.data(`imports/${bad}/sessions`, 'PUT', [storedSession('good')])).status, 200)
+  const result = await f.data(`imports/${bad}/commit`, 'POST', { mode: 'append' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.value.sessions.map((s) => s.id), ['good'])
+})

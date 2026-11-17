@@ -161,6 +161,23 @@ export const clearDraft = (sessionId: string | null) => {
   forgetDraft(sessionId)
 }
 
+/** 把本地草稿的版本绑定到当前 generation（commit 后 generation 会轮换）。 */
+const syncDraftGeneration = () => {
+  const current = getKnownGeneration()
+  draftGeneration = current
+  for (const [id, version] of draftVersions) {
+    draftVersions.set(id, { ...version, generation: current })
+  }
+}
+
+/**
+ * 追加导入后调用：commit 轮换 generation 但草稿被保留，需就地 rebase 各草稿版本，
+ * 否则下一次保存草稿会携带旧 generation，收到 409 冲突。
+ */
+export const rebaseDraftsAfterImport = () => {
+  syncDraftGeneration()
+}
+
 export const clearAllDrafts = () => {
   for (const timer of draftTimers.values()) {
     window.clearTimeout(timer)
@@ -168,7 +185,7 @@ export const clearAllDrafts = () => {
   draftTimers.clear()
   dirtyDrafts.clear()
   draftVersions.clear()
-  draftGeneration = getKnownGeneration()
+  syncDraftGeneration()
   draftEpoch++
   for (const draft of useDrafts.getState().drafts.values()) {
     draft.attachments.forEach((attachment) => releaseAttachment(attachment, true))
