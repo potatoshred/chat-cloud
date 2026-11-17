@@ -1,13 +1,15 @@
 import { create } from 'zustand'
 import type { TtsVoice } from './api/speech.js'
 import { normalizeLocation, type UserLocation } from './location.js'
+import { SERVER_API } from './api/config.js'
+import { storageFailure, storageJson } from './serverStorage.js'
 
 export type Locale = 'zh-CN' | 'en-US'
 
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
-/** 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、深度思考与智能搜索开关、侧边栏收起状态 */
+/** 容器部署存于服务端；静态部署保留上游 localStorage 行为。 */
 type Settings = {
   apiKey: string | null
   locale: Locale
@@ -31,6 +33,9 @@ const KEYS = {
 } as const
 
 const read = (key: string) => {
+  if (SERVER_API) {
+    return null
+  }
   try {
     return localStorage.getItem(key)
   } catch {
@@ -39,6 +44,9 @@ const read = (key: string) => {
 }
 
 const write = (key: string, value: string | null) => {
+  if (SERVER_API) {
+    return
+  }
   try {
     if (value === null) {
       localStorage.removeItem(key)
@@ -88,7 +96,7 @@ const initialThemePreference = (): ThemePreference => {
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
 export const useSettings = create<Settings>(() => ({
-  apiKey: read(KEYS.apiKey),
+  apiKey: SERVER_API ? null : read(KEYS.apiKey),
   locale: initialLocale(),
   location: initialLocation(),
   themePreference: initialThemePreference(),
@@ -137,4 +145,66 @@ export const setSearch = (search: boolean) => {
 export const setSiderCollapsed = (siderCollapsed: boolean) => {
   write(KEYS.siderCollapsed, String(siderCollapsed))
   useSettings.setState({ siderCollapsed })
+}
+
+let settingsQueue: Promise<unknown> = Promise.resolve()
+let settingsPending = 0
+let settingsSequence = 0
+let initialized = false
+let applyingRemote = false
+const applyRemote = (value: Partial<Settings>) => {
+  applyingRemote = true
+  useSettings.setState({ ...value, apiKey: null })
+  applyingRemote = false
+}
+export const initServerSettings = async () => {
+  if (!SERVER_API || initialized) {
+    return
+  }
+  applyRemote(await storageJson<Partial<Settings>>('settings'))
+  initialized = true
+  useSettings.subscribe((state, previous) => {
+    if (applyingRemote) {
+      return
+    }
+    const patch = Object.fromEntries(
+      Object.keys(KEYS)
+        .filter(
+          (key) =>
+            key !== 'apiKey' && state[key as keyof Settings] !== previous[key as keyof Settings]
+        )
+        .map((key) => [key, state[key as keyof Settings]])
+    )
+    if (Object.keys(patch).length === 0) {
+      return
+    }
+    settingsPending++
+    settingsSequence++
+    settingsQueue = settingsQueue
+      .then(() => storageJson('settings', 'PATCH', patch))
+      .catch(storageFailure)
+      .finally(() => {
+        settingsPending--
+      })
+  })
+  const refresh = async () => {
+    if (settingsPending || document.visibilityState === 'hidden') {
+      return
+    }
+    const sequence = settingsSequence
+    try {
+      const value = await storageJson<Partial<Settings>>('settings')
+      if (!settingsPending && sequence === settingsSequence) {
+        applyRemote(value)
+      }
+    } catch {
+      /* A failed refresh leaves the last loaded settings visible. */
+    }
+  }
+  window.addEventListener('focus', () => {
+    void refresh()
+  })
+  window.setInterval(() => {
+    void refresh()
+  }, 5000)
 }

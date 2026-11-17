@@ -1,6 +1,7 @@
 import { translate, type TranslationMessage } from '../../i18n/index.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
+import { API_ORIGIN, SERVER_API } from './config.js'
 import type {
   ApiErrorBody,
   CreateMessageRequest,
@@ -9,8 +10,7 @@ import type {
   MessageStreamEvent,
 } from './types.js'
 
-/** 构建期 API 地址，默认 https://api.deepseek.com；本地开发支持开发服务器代理 */
-export const API_ORIGIN = __API_ORIGIN__
+export { API_ORIGIN } from './config.js'
 /** Anthropic 兼容接口的前缀 */
 const ANTHROPIC_BASE_URL = `${API_ORIGIN}/anthropic/v1`
 /** 引用 Files API 上传的图片、调用 Anthropic 兼容 Files API 时必须携带 */
@@ -69,7 +69,13 @@ const readErrorResponse = async (
 export const request = async (url: string, init: RequestInit): Promise<Response> => {
   let response: Response
   try {
-    response = await fetch(url, init)
+    const headers = new Headers(init.headers)
+    if (SERVER_API) {
+      headers.delete('Authorization')
+      headers.delete('x-api-key')
+      headers.set('X-Chat-Request', '1')
+    }
+    response = await fetch(url, { ...init, headers })
   } catch (error) {
     if (init.signal?.aborted) {
       throw error

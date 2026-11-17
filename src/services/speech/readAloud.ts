@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { SERVER_API } from '../api/config.js'
 import type { TranslationMessage } from '../../i18n/index.js'
 import { ApiError } from '../api/client.js'
 import { classifyApiError } from '../api/errors.js'
@@ -63,7 +64,7 @@ export const describeReadAloudError = (error: unknown): TranslationMessage | str
   }
   switch (classifyApiError(error)) {
     case 'unauthorized':
-      return { key: 'apiKeyInvalidRetry' }
+      return { key: SERVER_API ? 'serverApiUnauthorized' : 'apiKeyInvalidRetry' }
     case 'insufficientBalance':
       return { key: 'insufficientBalance' }
     case 'rateLimited':

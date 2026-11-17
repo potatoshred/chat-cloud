@@ -7,6 +7,8 @@ import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from 
 import { useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
+import { SERVER_API } from '../api/config.js'
+import { isSessionCurrent, readServerState } from './serverDb.js'
 import {
   clearAllDrafts,
   clearDraft,
@@ -247,9 +249,28 @@ export const bindChatPersistence = () => {
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('pagehide', save)
+  const refresh = () => {
+    void refreshRemoteHistory()
+  }
+  window.addEventListener('focus', refresh)
+  const syncTimer = SERVER_API ? window.setInterval(refresh, 5000) : undefined
+  // Persist partial replies regularly while the owning device receives the stream.
+  const checkpoint = SERVER_API
+    ? window.setInterval(() => {
+        if (!get().importingHistory) {
+          for (const [id, flush] of streamFlushes) {
+            flush()
+            persist(id)
+          }
+        }
+      }, 2000)
+    : undefined
   return () => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
     window.removeEventListener('pagehide', save)
+    window.removeEventListener('focus', refresh)
+    window.clearInterval(syncTimer)
+    window.clearInterval(checkpoint)
   }
 }
 
@@ -343,12 +364,13 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
       if (!stored) {
         throw new Error(`Session ${id} is missing from local storage`)
       }
+      // Another device may still own the stream. Show a recoverable snapshot without writing it back.
       const settled = settleInterrupted(normalizeSession(stored))
       // 读取期间可能已在列表重命名，保留最新元数据，不能让旧读取覆盖它。
       const session = sameSummary(settled, summary) ? settled : { ...settled, ...summary }
       touchSession(id)
       set((state) => ({ sessionCache: { ...state.sessionCache, [id]: session } }))
-      if (session !== stored) {
+      if (!SERVER_API && session !== stored) {
         persist(id)
       }
       trimSessionCache()
@@ -452,6 +474,9 @@ export const selectSession = (id: string) => {
     touchSession(id)
     set({ activeId: id })
     void ensureSessionLoaded(id)
+    if (SERVER_API) {
+      void refreshRemoteHistory()
+    }
     trimSessionCache()
   }
 }
@@ -1090,5 +1115,71 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+  }
+}
+
+let refreshingHistory = false
+/** Refresh remote changes without replacing local unsaved edits or a stream owned by this tab. */
+const refreshRemoteHistory = async () => {
+  if (
+    !SERVER_API ||
+    refreshingHistory ||
+    !get().ready ||
+    get().importingHistory ||
+    document.visibilityState === 'hidden'
+  ) {
+    return
+  }
+  refreshingHistory = true
+  const epoch = historyEpoch
+  const before = get()
+  const previouslyUnsaved = new Set(unsavedSessions)
+  try {
+    const remote = await readServerState()
+    if (epoch !== historyEpoch || get().importingHistory) {
+      return
+    }
+    const state = get()
+    const protectedIds = new Set([
+      ...previouslyUnsaved,
+      ...unsavedSessions,
+      ...deletingSessions,
+      ...Object.keys(state.streaming),
+    ])
+    for (const [id, session] of Object.entries(state.sessionCache)) {
+      if (session !== before.sessionCache[id]) {
+        protectedIds.add(id)
+      }
+    }
+    const remoteIds = new Set(remote.sessions.map((s) => s.id))
+    const remoteRevisions = new Map(remote.sessions.map((s) => [s.id, s.revision]))
+    const sessionCache = Object.fromEntries(
+      Object.entries(state.sessionCache).filter(
+        ([id]) =>
+          protectedIds.has(id) ||
+          isSessionCurrent(id, remoteRevisions.get(id) ?? '', remote.generation)
+      )
+    )
+    set({
+      sessions: sortSessions([
+        ...remote.sessions.filter((s) => !protectedIds.has(s.id)),
+        ...state.sessions.filter((s) => protectedIds.has(s.id)),
+      ]),
+      sessionCache,
+      activeId:
+        state.activeId !== null &&
+        !remoteIds.has(state.activeId) &&
+        !protectedIds.has(state.activeId)
+          ? null
+          : state.activeId,
+    })
+    const active = get().activeId
+    if (active !== null) {
+      await ensureSessionLoaded(active)
+    }
+  } catch {
+    /* Preserve the last good view while offline; writes surface their own errors. */
+  } finally {
+    refreshingHistory = false
   }
 }

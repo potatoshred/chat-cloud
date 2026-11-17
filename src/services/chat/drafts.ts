@@ -10,6 +10,11 @@ import {
   type UploadTask,
 } from '../attachments.js'
 import type { FileAttachment } from './types.js'
+import { SERVER_API } from '../api/config.js'
+import { storageFailure, storageJson } from '../serverStorage.js'
+import { useSettings } from '../settings.js'
+import * as db from './db.js'
+import { getKnownGeneration } from './serverDb.js'
 
 export type DraftAttachment = {
   /** 本地标识，也是 IndexedDB 原件与上传任务的 key */
@@ -23,7 +28,7 @@ type Draft = { text: string; attachments: DraftAttachment[] }
 
 export const EMPTY_DRAFT: Draft = { text: '', attachments: [] }
 
-/** 草稿只保存在本次页面的内存中，独立于会话详情缓存；null 是新对话的草稿。 */
+/** null 是新对话的草稿；容器模式同步文字及附件原件到服务端。 */
 export const useDrafts = create<{ drafts: Map<string | null, Draft> }>(() => ({
   drafts: new Map(),
 }))
@@ -31,7 +36,7 @@ export const useDrafts = create<{ drafts: Map<string | null, Draft> }>(() => ({
 export const getDraft = (sessionId: string | null): Draft =>
   useDrafts.getState().drafts.get(sessionId) ?? EMPTY_DRAFT
 
-const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) =>
+const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) => {
   useDrafts.setState((state) => {
     const draft = update(state.drafts.get(sessionId) ?? EMPTY_DRAFT)
     const drafts = new Map(state.drafts)
@@ -42,6 +47,8 @@ const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) 
     }
     return { drafts }
   })
+  scheduleDraft(sessionId)
+}
 
 export const setDraftText = (sessionId: string | null, text: string) =>
   updateDraft(sessionId, (draft) => ({ ...draft, text }))
@@ -151,11 +158,204 @@ export const clearSentDraft = (sessionId: string | null) => {
 export const clearDraft = (sessionId: string | null) => {
   getDraft(sessionId).attachments.forEach((attachment) => releaseAttachment(attachment, true))
   updateDraft(sessionId, () => EMPTY_DRAFT)
+  forgetDraft(sessionId)
 }
 
 export const clearAllDrafts = () => {
+  for (const timer of draftTimers.values()) {
+    window.clearTimeout(timer)
+  }
+  draftTimers.clear()
+  dirtyDrafts.clear()
+  draftVersions.clear()
+  draftGeneration = getKnownGeneration()
+  draftEpoch++
   for (const draft of useDrafts.getState().drafts.values()) {
     draft.attachments.forEach((attachment) => releaseAttachment(attachment, true))
   }
   useDrafts.setState({ drafts: new Map() })
+}
+
+type SavedDraft = {
+  text: string
+  attachments: { id: string; name: string; type: string; isImage: boolean; lastModified: number }[]
+}
+type DraftVersion = { revision: string | null; generation: string }
+const draftVersions = new Map<string | null, DraftVersion>()
+const draftTimers = new Map<string | null, number>()
+const dirtyDrafts = new Set<string | null>()
+const savingDrafts = new Set<string | null>()
+let draftGeneration = ''
+let draftEpoch = 0
+const draftId = (id: string | null) => (id === null ? 'new' : `session:${id}`)
+const forgetDraft = (id: string | null) => {
+  window.clearTimeout(draftTimers.get(id))
+  draftTimers.delete(id)
+  dirtyDrafts.delete(id)
+  draftVersions.delete(id)
+}
+const scheduleDraft = (id: string | null) => {
+  if (!SERVER_API) {
+    return
+  }
+  if (!dirtyDrafts.has(id) && !draftVersions.has(id)) {
+    draftVersions.set(id, { revision: null, generation: draftGeneration })
+  }
+  dirtyDrafts.add(id)
+  window.clearTimeout(draftTimers.get(id))
+  draftTimers.set(
+    id,
+    window.setTimeout(() => {
+      void saveDraft(id)
+    }, 400)
+  )
+}
+const saveDraft = async (id: string | null) => {
+  if (savingDrafts.has(id) || !dirtyDrafts.has(id)) {
+    return
+  }
+  savingDrafts.add(id)
+  const draft = getDraft(id)
+  const epoch = draftEpoch
+  const version = draftVersions.get(id) ?? { revision: null, generation: draftGeneration }
+  try {
+    await db.saveFiles(draft.attachments.map((item) => ({ id: item.id, blob: item.file })))
+    if (epoch !== draftEpoch) {
+      return
+    }
+    const saved = await storageJson<DraftVersion>(
+      `drafts/${encodeURIComponent(draftId(id))}`,
+      'PUT',
+      {
+        ...version,
+        draft: {
+          text: draft.text,
+          attachments: draft.attachments.map((item) => ({
+            id: item.id,
+            name: item.file.name,
+            type: item.file.type,
+            isImage: item.isImage,
+            lastModified: item.file.lastModified,
+          })),
+        },
+      }
+    )
+    if (epoch !== draftEpoch) {
+      return
+    }
+    draftVersions.set(id, saved)
+    if (getDraft(id) === draft) {
+      dirtyDrafts.delete(id)
+    } else {
+      scheduleDraft(id)
+    }
+  } catch (error) {
+    if (epoch === draftEpoch) {
+      storageFailure(error)
+    }
+  } finally {
+    savingDrafts.delete(id)
+  }
+}
+let refreshingDrafts = false
+const refreshDrafts = async () => {
+  if (refreshingDrafts) {
+    return
+  }
+  refreshingDrafts = true
+  const epoch = draftEpoch
+  try {
+    const data = await storageJson<{
+      generation: string
+      drafts: { id: string; draft: SavedDraft; revision: string }[]
+    }>('drafts')
+    if (epoch !== draftEpoch) {
+      return
+    }
+    draftGeneration = data.generation
+    const present = new Set<string | null>()
+    for (const row of data.drafts) {
+      const id = row.id === 'new' ? null : row.id.slice('session:'.length)
+      present.add(id)
+      if (
+        dirtyDrafts.has(id) ||
+        savingDrafts.has(id) ||
+        (draftVersions.get(id)?.revision === row.revision &&
+          draftVersions.get(id)?.generation === data.generation)
+      ) {
+        continue
+      }
+      const previous = getDraft(id)
+      const attachments = await Promise.all(
+        row.draft.attachments.map(async (item) => {
+          const blob = await db.loadFile(item.id)
+          if (!blob) {
+            throw new Error('服务端草稿附件缺失，请刷新后重试。')
+          }
+          const file = new File([blob], item.name, {
+            type: item.type,
+            lastModified: item.lastModified,
+          })
+          return {
+            id: item.id,
+            file,
+            isImage: item.isImage,
+            previewUrl: item.isImage ? URL.createObjectURL(file) : null,
+          }
+        })
+      )
+      if (epoch !== draftEpoch || dirtyDrafts.has(id) || getDraft(id) !== previous) {
+        attachments.forEach((item) => releaseAttachment(item, false))
+        continue
+      }
+      previous.attachments.forEach((item) => releaseAttachment(item, true))
+      const draft = { text: row.draft.text, attachments }
+      useDrafts.setState((state) => {
+        const drafts = new Map(state.drafts)
+        if (draft.text || attachments.length) {
+          drafts.set(id, draft)
+        } else {
+          drafts.delete(id)
+        }
+        return { drafts }
+      })
+      draftVersions.set(id, { revision: row.revision, generation: data.generation })
+      attachments.forEach((item) => upload(item, useSettings.getState().apiKey ?? ''))
+    }
+    for (const id of draftVersions.keys()) {
+      if (!present.has(id) && !dirtyDrafts.has(id) && !savingDrafts.has(id)) {
+        getDraft(id).attachments.forEach((item) => releaseAttachment(item, true))
+        useDrafts.setState((state) => {
+          const drafts = new Map(state.drafts)
+          drafts.delete(id)
+          return { drafts }
+        })
+        draftVersions.delete(id)
+      }
+    }
+  } finally {
+    refreshingDrafts = false
+  }
+}
+export const initServerDrafts = async () => {
+  if (!SERVER_API) {
+    return
+  }
+  await refreshDrafts()
+  const refresh = () => {
+    if (document.visibilityState !== 'hidden') {
+      void refreshDrafts().catch(() => {})
+    }
+  }
+  window.addEventListener('focus', refresh)
+  window.setInterval(refresh, 5000)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      dirtyDrafts.forEach((id) => {
+        void saveDraft(id)
+      })
+    } else {
+      refresh()
+    }
+  })
 }

@@ -11,11 +11,12 @@ RUN pnpm install --frozen-lockfile --prod=false
 
 COPY rspack.config.ts tsconfig.json .oxlintrc.json LICENSE ./
 COPY src ./src
-RUN pnpm build
+RUN CHAT_SERVER_API=true pnpm build
 
 FROM node:24-alpine AS auth
 WORKDIR /app
-COPY --chown=node:node deploy/auth/server.mjs deploy/auth/password.mjs deploy/auth/style.css ./
+RUN mkdir -m 700 /data && chown node:node /data
+COPY --chown=node:node deploy/auth/server.mjs deploy/auth/password.mjs deploy/auth/api-proxy.mjs deploy/auth/data-store.mjs deploy/auth/style.css ./
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

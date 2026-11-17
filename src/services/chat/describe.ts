@@ -1,5 +1,6 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
 import { classifyStatus } from '../api/errors.js'
+import { SERVER_API } from '../api/config.js'
 import type { AssistantMessage } from './types.js'
 
 export type Notice = {
@@ -33,7 +34,9 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     }
     switch (classifyStatus(status)) {
       case 'unauthorized':
-        return { text: translate('replyInvalidApiKey'), action: 'apiKey' }
+        return SERVER_API
+          ? { text: translate('serverApiUnauthorized') }
+          : { text: translate('replyInvalidApiKey'), action: 'apiKey' }
       case 'insufficientBalance':
         return { text: translate('replyInsufficientBalance'), action: 'topUp' }
       case 'rateLimited':

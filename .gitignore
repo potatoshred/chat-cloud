@@ -10,5 +10,6 @@ build/
 !.env.example
 tmp/
 secrets/
+backups/
 __pycache__/
 *.pyc

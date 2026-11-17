@@ -34,6 +34,7 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { LogoutSetting } from './LogoutSetting.js'
+import { SERVER_API } from '../../services/api/config.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
 import styles from './Settings.module.css'
 
@@ -105,7 +106,9 @@ const SettingsContent = () => {
             </>
           ) : (
             <>
-              <ApiKeyField editor={apiKeyEditor} />
+              {SERVER_API ? (
+                <div className={styles.cell}>{t('serverApiConfigured')}</div>
+              ) : <ApiKeyField editor={apiKeyEditor} />}
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
@@ -123,7 +126,7 @@ const SettingsContent = () => {
                   </Button>
                 }
               />
-              {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
+              {isMobile && !SERVER_API ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
             </>
           )}
         </div>

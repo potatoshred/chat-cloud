@@ -1,3 +1,5 @@
+import { SERVER_API } from '../services/api/config.js'
+
 import type { zh } from './zh.js'
 
 export const en = {
@@ -11,8 +13,9 @@ export const en = {
   sessionLoading: 'Loading chats...',
   sessionListLoadFailed: 'Unable to load the chat list. Please try again.',
   sessionLoadFailed: 'Unable to load this chat. Please try again.',
-  sessionSaveFailed:
-    'Chats or attachments have not been saved locally. Retry before closing this page.',
+  sessionSaveFailed: SERVER_API
+    ? 'Chats or attachments have not been saved to the server. Retry before closing this page.'
+    : 'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
   settings: 'Settings',
   appName: 'API usage demo',
@@ -105,6 +108,9 @@ export const en = {
   avatarMenuSettingsDialogThemeSelectDarkOption: 'Dark',
   avatarMenuSettingsDialogThemeSelectSystemOption: 'System',
   apiKeyStart: 'Enter an API Key to get started',
+  serverApiConfigured: 'DeepSeek API is configured',
+  serverApiUnauthorized:
+    'Authentication failed. Please sign in again or check the API configuration.',
   apiKeyEdit: 'Edit API Key',
   apiKeyPlaceholder: 'Enter API Key',
   apiKeyVerifying: 'Verifying...',
@@ -114,23 +120,27 @@ export const en = {
   historyImport: 'Import chat history',
   historyImportConfirm: 'Import',
   historyImportConfirmTitle: 'Import chat history?',
-  historyImportConfirmDescription:
-    'The uploaded chat history will replace all your current chats. Import anyway?',
-  historyImportDescription:
-    'Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.',
+  historyImportConfirmDescription: SERVER_API
+    ? 'This replaces all server chats and drafts on every device. Import anyway?'
+    : 'The uploaded chat history will replace all your current chats. Import anyway?',
+  historyImportDescription: SERVER_API
+    ? 'History is stored on the server and shared across devices. Import replaces all chats and attachments. Supports DeepSeek ZIP files.'
+    : 'Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.',
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
   historyImportFailed:
     'File import failed. The file format may be invalid, or the ZIP file may use an older chat export format. Please export your chat history from DeepSeek again and retry the import.',
   historyExportFailed: 'Export failed: {message}',
   exportAllLabel: 'Export all chats',
-  historyExportDescription:
-    'Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.',
+  historyExportDescription: SERVER_API
+    ? 'Includes server chats and original images. Other attachments include metadata only. Settings, drafts and API Key are excluded. Back up the data volume for a complete backup.'
+    : 'Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.',
   exportAllDownload: 'Download',
   deleteAllSessions: 'Delete all chats',
   deleteAllSessionsModalTitle: 'Once deleted, all chats will be cleared and cannot be recovered.',
-  deleteAllSessionsModalDescription:
-    'Locally saved attachments and unsent drafts will also be deleted.',
+  deleteAllSessionsModalDescription: SERVER_API
+    ? 'Server attachments and unsent drafts will also be deleted on every device.'
+    : 'Locally saved attachments and unsent drafts will also be deleted.',
   historyDeleting: 'Deleting...',
   historyDeleted: 'Successfully deleted.',
   historyDeleteFailed: 'Failed to delete chats. Please try again.',

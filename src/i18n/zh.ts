@@ -1,3 +1,5 @@
+import { SERVER_API } from '../services/api/config.js'
+
 export const zh = {
   logout: '退出登录',
   welcomeMessageChat250808: '今天有什么可以帮到你？',
@@ -9,7 +11,9 @@ export const zh = {
   sessionLoading: '正在加载对话...',
   sessionListLoadFailed: '对话列表加载失败，请重试',
   sessionLoadFailed: '对话加载失败，请重试',
-  sessionSaveFailed: '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
+  sessionSaveFailed: SERVER_API
+    ? '对话或附件尚未保存到服务端，关闭页面可能丢失，请重试'
+    : '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
   sessionDeleteFailed: '删除对话失败，请重试',
   settings: '设置',
   appName: 'API 使用 demo',
@@ -100,6 +104,8 @@ export const zh = {
   avatarMenuSettingsDialogThemeSelectDarkOption: '深色',
   avatarMenuSettingsDialogThemeSelectSystemOption: '跟随系统',
   apiKeyStart: '输入 API Key 开始使用',
+  serverApiConfigured: 'DeepSeek API 已配置',
+  serverApiUnauthorized: '认证失败，请重新登录或检查 API 配置。',
   apiKeyEdit: '修改 API Key',
   apiKeyPlaceholder: '请输入 API Key',
   apiKeyVerifying: '正在验证...',
@@ -109,20 +115,27 @@ export const zh = {
   historyImport: '导入历史对话',
   historyImportConfirm: '确认导入',
   historyImportConfirmTitle: '确认导入历史对话？',
-  historyImportConfirmDescription: '上传的历史对话会覆盖当前所有对话记录，是否确认导入？',
-  historyImportDescription: '导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。',
+  historyImportConfirmDescription: SERVER_API
+    ? '导入会覆盖服务端所有对话及草稿，所有设备都会受影响。是否确认导入？'
+    : '上传的历史对话会覆盖当前所有对话记录，是否确认导入？',
+  historyImportDescription: SERVER_API
+    ? '历史保存在服务端，各设备共享。导入会覆盖全部对话和附件，支持 DeepSeek 导出的 ZIP。'
+    : '导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。',
   historyImportedOne: '已导入 1 个对话',
   historyImported: '已导入 {count} 个对话',
   historyImportFailed:
     '文件导入失败，可能是文件格式错误或使用了旧版的对话导出 ZIP 文件，请前往 DeepSeek 重新导出历史对话文件后再次导入。',
   historyExportFailed: '导出失败：{message}',
   exportAllLabel: '导出所有历史对话',
-  historyExportDescription:
-    '包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。',
+  historyExportDescription: SERVER_API
+    ? '包含服务端历史对话及图片原件；其他附件仅保留文件信息，不含设置、草稿和 API Key。完整备份请备份数据卷。'
+    : '包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。',
   exportAllDownload: '下载',
   deleteAllSessions: '删除所有对话',
   deleteAllSessionsModalTitle: '删除后，所有对话都将被清空且无法找回',
-  deleteAllSessionsModalDescription: '本地保存的附件及未发送的草稿也将被删除。',
+  deleteAllSessionsModalDescription: SERVER_API
+    ? '服务端保存的附件及未发送的草稿也将删除，所有设备都会受影响。'
+    : '本地保存的附件及未发送的草稿也将被删除。',
   historyDeleting: '删除中...',
   historyDeleted: '删除成功',
   historyDeleteFailed: '删除失败，请重试',

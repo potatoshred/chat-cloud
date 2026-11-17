@@ -24,15 +24,12 @@ services:
       context: .
       target: auth
     environment:
-      AUTH_CONFIG: /run/chat-secrets/auth.json
-    user: "${AUTH_UID:-1000}:${AUTH_GID:-1000}"
+      AUTH_USERNAME: "${AUTH_USERNAME:-admin}"
+      AUTH_PASSWORD: "${AUTH_PASSWORD:?请在 .env 中设置 AUTH_PASSWORD，至少 14 个字符}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:?请在 .env 中设置 DEEPSEEK_API_KEY}"
+      DEEPSEEK_API_BASE_URL: "${DEEPSEEK_API_BASE_URL:-https://api.deepseek.com}"
     volumes:
-      - type: bind
-        source: ./secrets
-        target: /run/chat-secrets
-        read_only: true
-        bind:
-          create_host_path: false
+      - chat_data:/data
     restart: unless-stopped
     read_only: true
     cap_drop:
@@ -45,3 +42,6 @@ networks:
     ipam:
       config:
         - subnet: "${CHAT_SUBNET:-172.29.255.0/24}"
+
+volumes:
+  chat_data:
