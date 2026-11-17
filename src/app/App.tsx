@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import clsx from 'clsx'
+import { useEffect, useRef } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
 import { bindAuthSession } from '../services/auth.js'
@@ -50,8 +51,16 @@ export const App = () => {
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
   )
   const activeId = useChatStore((state) => state.activeId)
+  // 折叠时保留侧边栏做宽度过渡；inert 让隐藏的侧边栏不参与键盘焦点
+  const siderSlotRef = useRef<HTMLDivElement>(null)
 
   usePreventPageScroll(isMobile)
+
+  useEffect(() => {
+    if (siderSlotRef.current) {
+      siderSlotRef.current.inert = siderCollapsed
+    }
+  }, [siderCollapsed])
 
   useEffect(bindAuthSession, [])
 
@@ -79,7 +88,17 @@ export const App = () => {
   return (
     <>
       <div ref={frameRef} className={styles.frame}>
-        {isMobile ? <MobileSider /> : siderCollapsed ? null : <Sider />}
+        {isMobile ? (
+          <MobileSider />
+        ) : (
+          <div
+            ref={siderSlotRef}
+            className={clsx(styles.siderSlot, siderCollapsed && styles.siderSlotCollapsed)}
+            aria-hidden={siderCollapsed}
+          >
+            <Sider />
+          </div>
+        )}
         <main className={styles.main}>
           {saveError ? (
             <div className={styles.saveError} role="alert">

@@ -177,6 +177,7 @@
   align-items: center;
   gap: 16px;
   margin: 12px 0 0 16px;
+  animation: siderFadeIn 0.2s ease;
 }
 
 .collapsedGroup {
@@ -198,12 +199,85 @@
   bottom: 0;
   left: 0;
   z-index: 800;
+  animation: siderDrawerIn 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: transform;
+}
+
+.drawer.drawerLeaving {
+  animation: siderDrawerOut 0.2s ease forwards;
 }
 
 .drawerMask {
   position: absolute;
   inset: 0;
   z-index: 799;
+  background: rgba(0, 0, 0, 0.32);
+  animation: siderMaskIn 0.24s ease;
+}
+
+.drawerMask.drawerLeaving {
+  animation: siderMaskOut 0.2s ease forwards;
+}
+
+@keyframes siderFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes siderDrawerIn {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes siderDrawerOut {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes siderMaskIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes siderMaskOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapsed,
+  .drawer,
+  .drawer.drawerLeaving,
+  .drawerMask {
+    animation: none;
+  }
 }
 
 .mobile {

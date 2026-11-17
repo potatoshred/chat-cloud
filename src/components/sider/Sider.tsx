@@ -140,16 +140,30 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   )
 }
 
-/** 移动端抽屉：浮在页面上方，点空白区域关闭。 */
+/** 移动端抽屉：浮在页面上方，点空白区域关闭；打开滑入、关闭滑出后卸载。 */
 export const MobileSider = () => {
   const open = useMobileSider((state) => state.open)
-  if (!open) {
+  const [mounted, setMounted] = useState(open)
+  useEffect(() => {
+    if (open) {
+      setMounted(true)
+      return
+    }
+    // 关闭时保留一帧播放滑出动画，再卸载
+    const timer = window.setTimeout(() => setMounted(false), 220)
+    return () => window.clearTimeout(timer)
+  }, [open])
+  if (!open && !mounted) {
     return null
   }
+  const leaving = !open
   return (
     <>
-      <div className={styles.drawerMask} onClick={closeMobileSider} />
-      <div className={styles.drawer}>
+      <div
+        className={clsx(styles.drawerMask, leaving && styles.drawerLeaving)}
+        onClick={closeMobileSider}
+      />
+      <div className={clsx(styles.drawer, leaving && styles.drawerLeaving)}>
         <Sider mobile />
       </div>
     </>
