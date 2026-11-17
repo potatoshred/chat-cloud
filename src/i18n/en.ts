@@ -47,6 +47,7 @@ export const en = {
   nextVersion: 'Next version',
   searchResult: 'Search results',
   searchSessionsPlaceholder: 'Search all chats',
+  searchSessionsTitle: 'Search chats',
   searchSessionsClear: 'Clear search',
   searchSessionsSearching: 'Searching…',
   searchSessionsNoResult: 'No matching chats',

@@ -24,6 +24,7 @@ import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
+import { SessionSearchOverlay } from '../components/sider/SessionSearchOverlay.js'
 import { closeMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
 import styles from './App.module.css'
@@ -155,6 +156,7 @@ export const App = () => {
         <SearchPanel />
       </div>
       <SettingsDialog />
+      <SessionSearchOverlay />
       <Toast />
     </>
   )

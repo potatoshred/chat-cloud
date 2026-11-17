@@ -44,6 +44,7 @@ export const zh = {
   nextVersion: '下一个版本',
   searchResult: '搜索结果',
   searchSessionsPlaceholder: '搜索所有对话',
+  searchSessionsTitle: '搜索对话',
   searchSessionsClear: '清除搜索',
   searchSessionsSearching: '搜索中…',
   searchSessionsNoResult: '没有找到匹配的对话',

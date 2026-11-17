@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16, IconSearchOutline16 } from '../base/icons.js'
 import { searchSessions } from '../../services/chat/db.js'
 import { revealMessage, selectSession } from '../../services/chat/store.js'
 import type { SessionSearchResult } from '../../services/chat/types.js'
 import { closeMobileSider } from './mobileSiderState.js'
-import styles from './SessionSearch.module.css'
+import { closeSessionSearch, useSessionSearch } from './sessionSearchState.js'
+import styles from './SessionSearchOverlay.module.css'
 
 /** 高亮片段中的关键词（大小写不敏感），不构造正则避免特殊字符问题。 */
 const highlight = (text: string, query: string): ReactNode => {
@@ -30,15 +32,42 @@ const highlight = (text: string, query: string): ReactNode => {
   return nodes
 }
 
-/** 侧边栏会话搜索：防抖请求所有会话正文，点击结果跳到对应消息。 */
-export const SessionSearch = () => {
+/** 居中的会话搜索浮层：输入关键词搜索所有会话正文，点击结果跳到对应消息。 */
+export const SessionSearchOverlay = () => {
   const t = useTranslate()
+  const open = useSessionSearch((state) => state.open)
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<SessionSearchResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const trimmed = query.trim()
+
+  // 打开时聚焦输入框；关闭时清空搜索状态。
+  useEffect(() => {
+    if (!open) {
+      setQuery('')
+      setResult(null)
+      setFailed(false)
+      setLoading(false)
+      return
+    }
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 0)
+    return () => window.clearTimeout(timer)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeSessionSearch()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open])
 
   useEffect(() => {
     if (!trimmed) {
@@ -75,6 +104,10 @@ export const SessionSearch = () => {
     }
   }, [trimmed])
 
+  if (!open) {
+    return null
+  }
+
   const openHit = (sessionId: string, messageId: string | null) => {
     if (messageId) {
       revealMessage(sessionId, messageId)
@@ -82,8 +115,7 @@ export const SessionSearch = () => {
       selectSession(sessionId)
     }
     closeMobileSider()
-    setQuery('')
-    setResult(null)
+    closeSessionSearch()
   }
 
   const roleLabel = (role: string) =>
@@ -93,41 +125,46 @@ export const SessionSearch = () => {
         ? t('searchSessionsRoleAssistant')
         : t('searchSessionsRoleTitle')
 
-  return (
-    <div className={styles.search}>
-      <div className={styles.field}>
-        <IconSearchOutline16 />
-        <input
-          ref={inputRef}
-          type="text"
-          className={styles.input}
-          value={query}
-          placeholder={t('searchSessionsPlaceholder')}
-          aria-label={t('searchSessionsPlaceholder')}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              setQuery('')
-            }
-          }}
-        />
-        {trimmed ? (
-          <button
-            type="button"
-            className={styles.clear}
-            aria-label={t('searchSessionsClear')}
-            onClick={() => {
-              setQuery('')
-              inputRef.current?.focus()
-            }}
-          >
-            <IconCloseOutline16 />
-          </button>
-        ) : null}
-      </div>
-      {trimmed ? (
-        <div className={styles.panel} role="listbox" aria-label={t('searchSessionsPlaceholder')}>
-          {loading ? (
+  return createPortal(
+    <div
+      className={styles.overlay}
+      onMouseDown={(event) => event.target === event.currentTarget && closeSessionSearch()}
+    >
+      <div
+        className={styles.card}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('searchSessionsTitle')}
+      >
+        <div className={styles.field}>
+          <IconSearchOutline16 />
+          <input
+            ref={inputRef}
+            type="text"
+            className={styles.input}
+            value={query}
+            placeholder={t('searchSessionsPlaceholder')}
+            aria-label={t('searchSessionsPlaceholder')}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {trimmed ? (
+            <button
+              type="button"
+              className={styles.clear}
+              aria-label={t('searchSessionsClear')}
+              onClick={() => {
+                setQuery('')
+                inputRef.current?.focus()
+              }}
+            >
+              <IconCloseOutline16 />
+            </button>
+          ) : null}
+        </div>
+        <div className={styles.results}>
+          {!trimmed ? (
+            <div className={styles.hint}>{t('searchSessionsPlaceholder')}</div>
+          ) : loading ? (
             <div className={styles.hint}>{t('searchSessionsSearching')}</div>
           ) : failed ? (
             <div className={styles.hint}>{t('searchSessionsFailed')}</div>
@@ -140,7 +177,6 @@ export const SessionSearch = () => {
                 <button
                   key={`${hit.sessionId}-${hit.messageId ?? 'title'}`}
                   type="button"
-                  role="option"
                   className={styles.hit}
                   onClick={() => openHit(hit.sessionId, hit.messageId)}
                 >
@@ -156,7 +192,8 @@ export const SessionSearch = () => {
             <div className={styles.hint}>{t('searchSessionsNoResult')}</div>
           )}
         </div>
-      ) : null}
-    </div>
+      </div>
+    </div>,
+    document.body
   )
 }
