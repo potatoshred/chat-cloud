@@ -85,7 +85,11 @@ export const createConfig = ({
       __SERVER_API__: JSON.stringify(process.env.CHAT_SERVER_API === 'true'),
     }),
     new rspack.CopyRspackPlugin({
-      patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
+      patterns: [
+        { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },
+        { from: path.resolve(root, 'src/favicon.ico'), to: 'favicon.ico', toType: 'file' },
+        { from: path.resolve(root, 'src/favicon.svg'), to: 'favicon.svg', toType: 'file' },
+      ],
     }),
   ],
   performance: { hints: false },

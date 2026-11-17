@@ -105,6 +105,8 @@ function page({ title, description, content, error = '' }) {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>${escape(title)} · 私人聊天</title>
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
 <link rel="stylesheet" href="/auth/style.css"></head><body>
 <main class="card"><div class="brand"><span class="mark" aria-hidden="true">✦</span><span>私人聊天<span class="brand-note">PERSONAL SPACE</span></span></div>
 <h1>${escape(title)}</h1><p class="description">${escape(description)}</p>
@@ -195,7 +197,7 @@ export function createAuthServer(rawConfig, { now = Date.now, apiProxy, dataStor
     response.setHeader('Referrer-Policy', 'same-origin')
     response.setHeader(
       'Content-Security-Policy',
-      "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+      "default-src 'none'; img-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     )
     try {
       const path = request.url?.split('?')[0]
