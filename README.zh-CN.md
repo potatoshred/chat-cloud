@@ -2,6 +2,10 @@
 
 [English](README.md) | 简体中文
 
+本 fork 增加了 Docker 部署和单用户独立登录页。设置账号、运行容器及 HTTPS 配置见
+[单用户部署说明](DEPLOYMENT.zh-CN.md)。下方保留上游聊天示例的使用说明；
+`pnpm dev` 和直接打开静态产物不提供登录保护，部署时请使用本 fork 的 Compose 配置。
+
 基于 DeepSeek API 的静态聊天示例。无需应用后端，浏览器直接请求配置的 API 服务。
 
 点击 [在线体验](https://deepseek-ai.github.io/chat-demo/) 即可使用，也可以前往 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中填写 API Key。

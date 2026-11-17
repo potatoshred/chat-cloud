@@ -1,5 +1,9 @@
 # chat-demo
 
+This fork adds Docker deployment and a single-user login page. See the
+[deployment guide (Chinese)](DEPLOYMENT.zh-CN.md). The upstream development server
+and standalone static files do not include login protection; use Docker Compose for the protected deployment.
+
 English | [简体中文](README.zh-CN.md)
 
 A static chat demo powered by the DeepSeek API. No application backend is required: the browser connects directly to the configured API service.

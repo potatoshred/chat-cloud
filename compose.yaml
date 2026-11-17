@@ -1,0 +1,47 @@
+services:
+  chat:
+    image: deepseek-chat-demo:local
+    build:
+      context: .
+      target: runtime
+    depends_on:
+      auth:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8090:8080"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  auth:
+    image: deepseek-chat-auth:local
+    build:
+      context: .
+      target: auth
+    environment:
+      AUTH_CONFIG: /run/chat-secrets/auth.json
+    user: "${AUTH_UID:-1000}:${AUTH_GID:-1000}"
+    volumes:
+      - type: bind
+        source: ./secrets
+        target: /run/chat-secrets
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: "${CHAT_SUBNET:-172.29.255.0/24}"

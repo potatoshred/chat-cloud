@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
+import { bindAuthSession } from '../services/auth.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
   bindChatPersistence,
@@ -51,6 +52,8 @@ export const App = () => {
   const activeId = useChatStore((state) => state.activeId)
 
   usePreventPageScroll(isMobile)
+
+  useEffect(bindAuthSession, [])
 
   useEffect(() => {
     document.documentElement.lang = locale
