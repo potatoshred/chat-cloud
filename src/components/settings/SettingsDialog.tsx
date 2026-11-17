@@ -25,11 +25,9 @@ import {
   setLocale,
   setLocation,
   setModel,
-  setReasoningEffort,
   setThemePreference,
   setTtsVoice,
   useSettings,
-  type ReasoningEffort,
   type ThemePreference,
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
@@ -108,7 +106,6 @@ const SettingsContent = () => {
               <LocaleSetting />
               <TtsVoiceSetting />
               <ModelSetting />
-              <ReasoningEffortSetting />
               <LocationSetting />
               <LogoutSetting />
             </>
@@ -415,29 +412,6 @@ const themeOptions: { value: ThemePreference; label: TranslationKey; icon: React
 ]
 
 /** 思考强度：深度思考开启时生效，低 / 高 / 极致。 */
-const ReasoningEffortSetting = () => {
-  const t = useTranslate()
-  const reasoningEffort = useSettings((state) => state.reasoningEffort)
-  return (
-    <SettingCell
-      label={t('settingsReasoningEffort')}
-      description={t('settingsReasoningEffortDescription')}
-      status={null}
-      action={
-        <Select
-          ariaLabel={t('settingsReasoningEffort')}
-          value={reasoningEffort}
-          options={[
-            { value: 'low', label: t('settingsReasoningEffortLow') },
-            { value: 'high', label: t('settingsReasoningEffortHigh') },
-            { value: 'max', label: t('settingsReasoningEffortMax') },
-          ]}
-          onChange={(value) => setReasoningEffort(value as ReasoningEffort)}
-        />
-      }
-    />
-  )
-}
 
 /** 模型：下拉来自官方 /models，仅在点刷新按钮时拉取。 */
 const ModelSetting = () => {

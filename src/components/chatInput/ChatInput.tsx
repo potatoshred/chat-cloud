@@ -5,9 +5,15 @@ import {
   IconPaperclipOutline16,
   IconSendOutline16,
   IconStopFill16,
-  IconThinkOutline14,
+  IconThinkEffort14,
 } from '../base/icons.js'
-import { setSearch, setThinking, useSettings } from '../../services/settings.js'
+import {
+  setReasoningEffort,
+  setSearch,
+  setThinking,
+  useSettings,
+  type ReasoningEffort,
+} from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
 import {
@@ -34,6 +40,14 @@ import { Spectrum } from './Spectrum.js'
 import { useTranslate } from '../../i18n/index.js'
 import styles from './ChatInput.module.css'
 
+/** 深度思考四档循环：关闭 → 低 → 高 → 极致 → 关闭。 */
+const THINK_LEVELS: (ReasoningEffort | null)[] = [null, 'low', 'high', 'max']
+const THINK_LABEL_KEYS = {
+  low: 'settingsReasoningEffortLow',
+  high: 'settingsReasoningEffortHigh',
+  max: 'settingsReasoningEffortMax',
+} as const
+
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
 export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: string | null }) {
   // 切换目标时释放录音、转写和 DOM 状态；文字与附件由草稿服务保留。
@@ -50,6 +64,20 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
   )
   const thinking = useSettings((state) => state.thinking)
+  const reasoningEffort = useSettings((state) => state.reasoningEffort)
+  // 关闭思考时档位为 null；开启时用当前强度。按钮按 null → low → high → max 循环。
+  const thinkLevel = thinking ? reasoningEffort : null
+  const cycleThinking = () => {
+    const next = THINK_LEVELS[(THINK_LEVELS.indexOf(thinkLevel) + 1) % THINK_LEVELS.length]
+    if (next === null) {
+      setThinking(false)
+    } else {
+      setThinking(true)
+      setReasoningEffort(next)
+    }
+  }
+  const thinkLabel =
+    thinkLevel === null ? t('thinkingSwitch') : `${t('thinkingSwitch')}·${t(THINK_LABEL_KEYS[thinkLevel])}`
   const importingHistory = useChatStore((state) => state.importingHistory)
   const isMobile = useIsMobile()
   const search = useSettings((state) => state.search)
@@ -206,12 +234,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             <button
               type="button"
               className={clsx(styles.toggle, thinking && styles.selected)}
-              aria-label={t('thinkingSwitch')}
+              aria-label={thinkLabel}
               aria-pressed={thinking}
-              onClick={() => setThinking(!thinking)}
+              onClick={cycleThinking}
             >
-              <IconThinkOutline14 />
-              <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
+              <IconThinkEffort14 level={thinkLevel} />
+              <span className={styles.toggleLabel}>{thinkLabel}</span>
             </button>
           </Tooltip>
           <Tooltip content={t('deactivatedSearchTooltip')}>
