@@ -37,6 +37,23 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # 可选：Cloudflare Tunnel。取消下方服务注释，并在 .env 设置 CLOUDFLARE_TUNNEL_TOKEN。
+  # 在 Cloudflare 中配置公网主机名，服务地址填写 http://chat:8080。
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:?请在 .env 中设置 CLOUDFLARE_TUNNEL_TOKEN}"
+  #   depends_on:
+  #     chat:
+  #       condition: service_started
+  #   restart: unless-stopped
+  #   read_only: true
+  #   cap_drop:
+  #     - ALL
+  #   security_opt:
+  #     - no-new-privileges:true
+
 networks:
   default:
     ipam:

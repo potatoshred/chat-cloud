@@ -57,6 +57,7 @@ Compose 在容器启动时读取以下变量：
 | `DEEPSEEK_API_KEY` | DeepSeek API Key，必填 | 无 |
 | `DEEPSEEK_API_BASE_URL` | 上游 API 根地址 | `https://api.deepseek.com` |
 | `CHAT_SUBNET` | Docker 网络子网；与其他网络冲突时调整 | `172.29.255.0/24` |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare Tunnel 令牌；启用 `cloudflared` 时必填 | 无 |
 
 密码建议由密码管理器生成。含 `$`、`#` 等字符时，在 `.env` 中用单引号包裹以保留原值。
 `.env` 包含密码和 Key，应保持权限为 600，并限制主机及 Docker 的访问权限。
@@ -155,6 +156,25 @@ server {
 
 如果入口代理也运行在容器中，让它与 `chat` 加入同一网络，代理到 `chat:8080`。
 代理容器中的 `127.0.0.1` 指向该代理容器自身。
+
+### 可选：Cloudflare Tunnel
+
+`compose.yaml` 已包含默认注释的 `cloudflared` 服务。启用后可通过 Cloudflare 提供的 HTTPS 域名访问，
+无需开放服务器入站端口。
+
+1. 在 Cloudflare 控制台创建使用 `cloudflared` 的 Tunnel，并复制其令牌。
+2. 在 `.env` 中添加 `CLOUDFLARE_TUNNEL_TOKEN=你的隧道令牌`。
+3. 取消 `compose.yaml` 中 `cloudflared` 服务配置的注释。
+4. 在该 Tunnel 中添加公网主机名，例如 `chat.example.com`，服务类型选择 HTTP，地址填写 `chat:8080`（完整地址为 `http://chat:8080`）。保留默认的 Host 转发设置。
+5. 启动服务：
+
+   ```sh
+   docker compose up -d --no-build
+   docker compose logs --tail=50 cloudflared
+   ```
+
+然后打开 `https://chat.example.com`，使用应用的账号密码登录。
+`cloudflared` 通过容器网络连接 `chat:8080`。
 
 ## 登录与访问保护
 
