@@ -19,6 +19,8 @@ declare const styles: {
   readonly "themeOptions": string;
   readonly "themeOption": string;
   readonly "themeOptionSelected": string;
+  readonly "modelAction": string;
+  readonly "modelRefresh": string;
   readonly "description": string;
   readonly "error": string;
   readonly "apiKey": string;

@@ -1036,3 +1036,19 @@ test('a malformed session in a batch fails cleanly without leaving the db in a b
   assert.equal(result.status, 200)
   assert.deepEqual(result.value.sessions.map((s) => s.id), ['good'])
 })
+
+test('settings accept model and reasoning effort but reject invalid values', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const patch = await f.data('settings', 'PATCH', {
+    model: 'deepseek-v4-pro',
+    reasoningEffort: 'max',
+  })
+  assert.equal(patch.status, 200)
+  const settings = (await f.data('settings')).value
+  assert.equal(settings.model, 'deepseek-v4-pro')
+  assert.equal(settings.reasoningEffort, 'max')
+  assert.equal((await f.data('settings', 'PATCH', { reasoningEffort: 'ultra' })).status, 400)
+  assert.equal((await f.data('settings', 'PATCH', { model: '' })).status, 400)
+  assert.equal((await f.data('settings', 'PATCH', { model: 42 })).status, 400)
+})

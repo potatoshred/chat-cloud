@@ -4,7 +4,27 @@
  * 声明 deepseek_web_search / deepseek_read_url 或设置 safety_check.level 为 high 时进入扩展模式。
  */
 
-export type ChatModel = 'deepseek-flash' | 'deepseek-v4-pro'
+/** 模型 id 由 /models 动态提供，保留 string 以容纳官方新增模型。 */
+export type ChatModel = string
+
+/** 思考强度；思考开启时通过 output_config.effort 传给端点。 */
+export type ReasoningEffort = 'low' | 'high' | 'max'
+
+/** GET /models 返回的单个模型（只取本应用用到的字段）。 */
+export type ModelInfo = {
+  id: string
+  object?: string
+  owned_by?: string
+  name?: string
+  context_window?: number
+  max_output_tokens?: number
+  effort?: { supported_levels?: string[]; default_level?: string }
+}
+
+export type ModelsResponse = {
+  object: 'list'
+  data: ModelInfo[]
+}
 
 // ---------- 响应：内容块 ----------
 
@@ -177,6 +197,8 @@ export type CreateMessageRequest = {
   system: string
   messages: MessageParam[]
   thinking: { type: 'enabled' | 'disabled' }
+  /** 思考开启时携带推理强度（Anthropic 兼容端点）。 */
+  output_config?: { effort: ReasoningEffort }
   tools: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
   safety_check: { level: 'high' }
   title?: { enabled: boolean }

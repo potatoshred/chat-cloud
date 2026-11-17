@@ -6,6 +6,7 @@ import {
   IconDownloadOutline16,
   IconFollowsystemOutline16,
   IconLightOutline16,
+  IconRefreshOutline16,
   IconSettingsOutline16,
   IconUploadOutline14,
 } from '../base/icons.js'
@@ -23,9 +24,12 @@ import {
   isChineseBrowser,
   setLocale,
   setLocation,
+  setModel,
+  setReasoningEffort,
   setThemePreference,
   setTtsVoice,
   useSettings,
+  type ReasoningEffort,
   type ThemePreference,
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
@@ -35,6 +39,7 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { LogoutSetting } from './LogoutSetting.js'
+import { useModels } from './useModels.js'
 import { SERVER_API } from '../../services/api/config.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
 import styles from './Settings.module.css'
@@ -102,6 +107,8 @@ const SettingsContent = () => {
               <ThemeSetting />
               <LocaleSetting />
               <TtsVoiceSetting />
+              <ModelSetting />
+              <ReasoningEffortSetting />
               <LocationSetting />
               <LogoutSetting />
             </>
@@ -406,6 +413,72 @@ const themeOptions: { value: ThemePreference; label: TranslationKey; icon: React
     icon: <IconFollowsystemOutline16 />,
   },
 ]
+
+/** 思考强度：深度思考开启时生效，低 / 高 / 极致。 */
+const ReasoningEffortSetting = () => {
+  const t = useTranslate()
+  const reasoningEffort = useSettings((state) => state.reasoningEffort)
+  return (
+    <SettingCell
+      label={t('settingsReasoningEffort')}
+      description={t('settingsReasoningEffortDescription')}
+      status={null}
+      action={
+        <Select
+          ariaLabel={t('settingsReasoningEffort')}
+          value={reasoningEffort}
+          options={[
+            { value: 'low', label: t('settingsReasoningEffortLow') },
+            { value: 'high', label: t('settingsReasoningEffortHigh') },
+            { value: 'max', label: t('settingsReasoningEffortMax') },
+          ]}
+          onChange={(value) => setReasoningEffort(value as ReasoningEffort)}
+        />
+      }
+    />
+  )
+}
+
+/** 模型：下拉来自官方 /models，仅在点刷新按钮时拉取。 */
+const ModelSetting = () => {
+  const t = useTranslate()
+  const model = useSettings((state) => state.model)
+  const { models, refreshing, error, refresh } = useModels()
+  const options = models.map((item) => ({ value: item.id, label: item.name || item.id }))
+  // 列表为空或当前模型不在列表里时，补一项保证 Select 能显示当前值。
+  if (!options.some((option) => option.value === model)) {
+    options.unshift({ value: model, label: model })
+  }
+  return (
+    <SettingCell
+      label={t('settingsModel')}
+      description={error ?? t('settingsModelDescription')}
+      status={null}
+      action={
+        <div className={styles.modelAction}>
+          <Select
+            ariaLabel={t('settingsModel')}
+            value={model}
+            options={options}
+            placeholder={t('settingsModelPlaceholder')}
+            onChange={setModel}
+          />
+          <Button
+            variant="outlined"
+            size="m"
+            className={styles.modelRefresh}
+            aria-label={t('settingsModelRefresh')}
+            disabled={refreshing}
+            onClick={() => void refresh()}
+          >
+            <IconRefreshOutline16 />
+            {t(refreshing ? 'settingsModelRefreshing' : 'settingsModelRefresh')}
+          </Button>
+        </div>
+      }
+    />
+  )
+}
 
 /**
  * 主题项：标题下方浅色 / 深色 / 跟随系统三个选块。

@@ -9,6 +9,9 @@ export type Locale = 'zh-CN' | 'en-US'
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
+/** 思考强度；默认 high */
+export type ReasoningEffort = 'low' | 'high' | 'max'
+
 /** 容器部署存于服务端；静态部署保留上游 localStorage 行为。 */
 type Settings = {
   apiKey: string | null
@@ -17,6 +20,8 @@ type Settings = {
   location: UserLocation | null
   ttsVoice: TtsVoice
   thinking: boolean
+  reasoningEffort: ReasoningEffort
+  model: string
   search: boolean
   siderCollapsed: boolean
 }
@@ -28,6 +33,8 @@ const KEYS = {
   themePreference: 'chat-demo:theme-preference',
   ttsVoice: 'chat-demo:tts-voice',
   thinking: 'chat-demo:thinking',
+  reasoningEffort: 'chat-demo:reasoning-effort',
+  model: 'chat-demo:model',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -95,6 +102,16 @@ const initialThemePreference = (): ThemePreference => {
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
+/** 未保存过时使用服务端默认强度 high */
+const initialReasoningEffort = (): ReasoningEffort => {
+  const saved = read(KEYS.reasoningEffort)
+  return saved === 'low' || saved === 'high' || saved === 'max' ? saved : 'high'
+}
+
+const DEFAULT_MODEL = 'deepseek-flash'
+/** 未保存过时使用默认模型 */
+const initialModel = (): string => read(KEYS.model) || DEFAULT_MODEL
+
 export const useSettings = create<Settings>(() => ({
   apiKey: SERVER_API ? null : read(KEYS.apiKey),
   locale: initialLocale(),
@@ -102,6 +119,8 @@ export const useSettings = create<Settings>(() => ({
   themePreference: initialThemePreference(),
   ttsVoice: initialTtsVoice(),
   thinking: read(KEYS.thinking) === 'true',
+  reasoningEffort: initialReasoningEffort(),
+  model: initialModel(),
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
@@ -135,6 +154,16 @@ export const setApiKey = (apiKey: string | null) => {
 export const setThinking = (thinking: boolean) => {
   write(KEYS.thinking, String(thinking))
   useSettings.setState({ thinking })
+}
+
+export const setReasoningEffort = (reasoningEffort: ReasoningEffort) => {
+  write(KEYS.reasoningEffort, reasoningEffort)
+  useSettings.setState({ reasoningEffort })
+}
+
+export const setModel = (model: string) => {
+  write(KEYS.model, model)
+  useSettings.setState({ model })
 }
 
 export const setSearch = (search: boolean) => {

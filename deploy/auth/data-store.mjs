@@ -307,6 +307,8 @@ export function createDataStore(filename) {
               v === null ||
               (object(v) && typeof v.region === 'string' && /^[A-Z]{2}$/.test(v.region)),
             thinking: (v) => typeof v === 'boolean',
+            reasoningEffort: (v) => ['low', 'high', 'max'].includes(v),
+            model: (v) => typeof v === 'string' && v.length > 0 && v.length <= 256,
             search: (v) => typeof v === 'boolean',
             siderCollapsed: (v) => typeof v === 'boolean',
           }

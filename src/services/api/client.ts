@@ -8,6 +8,8 @@ import type {
   FileObject,
   FilePurpose,
   MessageStreamEvent,
+  ModelInfo,
+  ModelsResponse,
 } from './types.js'
 
 export { API_ORIGIN } from './config.js'
@@ -102,6 +104,17 @@ export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promis
     headers: { Authorization: `Bearer ${apiKey}` },
     signal,
   })
+}
+
+/** 拉取官方模型列表（手动刷新时调用；SERVER_API 下鉴权由服务端代理注入）。 */
+export const fetchModels = async (apiKey: string, signal?: AbortSignal): Promise<ModelInfo[]> => {
+  const response = await request(`${API_ORIGIN}/models`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal,
+  })
+  const body = (await response.json()) as ModelsResponse
+  return Array.isArray(body?.data) ? body.data : []
 }
 
 /**
