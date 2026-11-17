@@ -22,6 +22,46 @@ const fileIds = (session) => [
 ]
 const summary = ({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt })
 
+// 会话全文检索的文本提取规则。客户端 src/services/chat/searchText.ts 有同规则实现，改动需同步。
+const CITATION = /\s*\[citation:\d+\]/g
+const cleanText = (text) => (typeof text === 'string' ? text.replace(CITATION, '') : '')
+
+/** 从一条会话提取可搜索片段：标题、用户正文、助手正文（不含模板块/思考/工具密文）。 */
+function extractSearchDocs(session) {
+  const docs = []
+  const title = typeof session.title === 'string' ? session.title : ''
+  if (title.trim()) docs.push({ messageId: null, role: 'title', text: title })
+  for (const message of Array.isArray(session.messages) ? session.messages : []) {
+    if (!message || typeof message.id !== 'string') continue
+    if (message.role === 'user') {
+      const text = cleanText(message.content)
+      if (text.trim()) docs.push({ messageId: message.id, role: 'user', text })
+    } else if (message.role === 'assistant' && Array.isArray(message.blocks)) {
+      const parts = []
+      for (const block of message.blocks) {
+        if (block?.type === 'text' && !block.isTemplate) {
+          const text = cleanText(block.text)
+          if (text.trim()) parts.push(text)
+        }
+      }
+      if (parts.length) docs.push({ messageId: message.id, role: 'assistant', text: parts.join('\n') })
+    }
+  }
+  return docs
+}
+
+/** 关键词命中处的片段：前后各取约 40 字，按代理对边界对齐。未命中返回 null。 */
+function makeSnippet(text, query) {
+  const at = text.toLowerCase().indexOf(query.toLowerCase())
+  if (at < 0) return null
+  const radius = 40
+  let start = Math.max(0, at - radius)
+  let end = Math.min(text.length, at + query.length + radius)
+  if (start > 0 && /[\uDC00-\uDFFF]/.test(text[start])) start--
+  if (end < text.length && /[\uDC00-\uDFFF]/.test(text[end])) end++
+  return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`
+}
+
 function validateSession(session, id) {
   if (
     !object(session) ||
@@ -184,6 +224,47 @@ export function createDataStore(filename) {
     for (const id of candidates)
       if (!referenced.has(id)) db.prepare('DELETE FROM files WHERE id=?').run(id)
   }
+  // 搜索索引按 meta.version 缓存：会话写/导入/删除都会 bump version。
+  let searchCache = { version: null, docs: [] }
+  const buildSearchIndex = () => {
+    const version = getMeta('version')
+    if (searchCache.version === version) return searchCache.docs
+    const docs = []
+    for (const row of db.prepare('SELECT id,json FROM sessions').all()) {
+      let session
+      try {
+        session = JSON.parse(row.json)
+      } catch {
+        continue
+      }
+      const updatedAt = Number.isFinite(session.updatedAt) ? session.updatedAt : 0
+      const sessionTitle = typeof session.title === 'string' ? session.title : ''
+      for (const doc of extractSearchDocs(session)) {
+        docs.push({ sessionId: row.id, sessionTitle, updatedAt, ...doc })
+      }
+    }
+    searchCache = { version, docs }
+    return docs
+  }
+  const searchSessions = (query) => {
+    const hits = []
+    if (query) {
+      for (const doc of buildSearchIndex()) {
+        const snippet = makeSnippet(doc.text, query)
+        if (snippet === null) continue
+        hits.push({
+          sessionId: doc.sessionId,
+          sessionTitle: doc.sessionTitle,
+          messageId: doc.messageId,
+          role: doc.role,
+          snippet,
+          updatedAt: doc.updatedAt,
+        })
+      }
+    }
+    hits.sort((a, b) => b.updatedAt - a.updatedAt)
+    return { query, total: hits.length, truncated: hits.length > 50, hits: hits.slice(0, 50) }
+  }
   const json = (response, value, status = 200) => {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
     response.end(JSON.stringify(value))
@@ -210,6 +291,14 @@ export function createDataStore(filename) {
       const method = request.method
       if (kind === 'state' && parts.length === 1 && method === 'GET') {
         json(response, state())
+        return
+      }
+      if (kind === 'search' && parts.length === 1 && method === 'POST') {
+        const input = await body(request, 4096)
+        if (!object(input) || typeof input.query !== 'string') fail(400, '搜索关键词无效。')
+        const query = input.query.trim()
+        if (query.length > 200) fail(400, '搜索关键词过长。')
+        json(response, searchSessions(query))
         return
       }
       if (kind === 'sessions' && parts.length === 2 && validId(id)) {

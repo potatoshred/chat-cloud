@@ -115,3 +115,32 @@ export const selectVersion = (original: Session, messageId: string): Session => 
     ),
   }
 }
+
+/**
+ * 让任意消息进入可见路径：从目标沿 parentId 回溯出完整链，
+ * 把链上每个节点设为下一个节点的选中子，并把根指向链首。
+ * 用于搜索命中隐藏分支时跳转定位。
+ */
+export const revealPath = (original: Session, messageId: string): Session => {
+  const session = normalizeSession(original)
+  const byId = new Map(session.messages.map((message) => [message.id, message]))
+  const target = byId.get(messageId)
+  if (!target) {
+    return original
+  }
+  const chain: Message[] = []
+  let current: Message | undefined = target
+  while (current) {
+    chain.unshift(current)
+    current = current.parentId ? byId.get(current.parentId) : undefined
+  }
+  const nextChild = new Map(chain.map((message, index) => [message.id, chain[index + 1]?.id]))
+  return {
+    ...session,
+    rootMessageId: chain[0].id,
+    messages: session.messages.map((message) => {
+      const child = nextChild.get(message.id)
+      return child ? { ...message, selectedChildId: child } : message
+    }),
+  }
+}

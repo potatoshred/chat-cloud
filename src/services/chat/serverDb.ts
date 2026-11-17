@@ -5,7 +5,13 @@ import {
   storageRequest,
 } from '../serverStorage.js'
 import type { StoredFile } from './localDb.js'
-import type { CommitSummary, ImportMode, Session, SessionSummary } from './types.js'
+import type {
+  CommitSummary,
+  ImportMode,
+  Session,
+  SessionSearchResult,
+  SessionSummary,
+} from './types.js'
 
 type Version = { revision: string | null; generation: string }
 export type ServerState = {
@@ -42,6 +48,11 @@ export const isSessionCurrent = (id: string, revision: string, remoteGeneration:
 }
 export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
   (await readServerState()).sessions
+/** 服务端全文搜索：先等在途写入，避免刚保存的会话搜不到。 */
+export const searchSessions = async (query: string): Promise<SessionSearchResult> => {
+  await queue
+  return storageJson<SessionSearchResult>('search', 'POST', { query })
+}
 export const loadSession = async (id: string): Promise<Session | undefined> => {
   await queue
   try {

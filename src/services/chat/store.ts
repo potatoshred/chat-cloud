@@ -5,10 +5,17 @@ import type { CreateMessageRequest } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import { useSettings } from '../settings.js'
-import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
+import {
+  appendBranch,
+  getVisibleMessages,
+  normalizeSession,
+  revealPath,
+  selectVersion,
+} from './branches.js'
 import * as db from './db.js'
 import { SERVER_API } from '../api/config.js'
 import { isSessionCurrent, readServerState } from './serverDb.js'
+import { requestReveal } from './revealState.js'
 import {
   clearAllDrafts,
   clearDraft,
@@ -491,6 +498,28 @@ export const selectSession = (id: string) => {
     }
     trimSessionCache()
   }
+}
+
+/** 搜索命中后跳转：切换会话、加载、必要时把目标消息所在分支设为可见，再请求定位。 */
+export const revealMessage = (sessionId: string, messageId: string) => {
+  if (get().importingHistory || deletingSessions.has(sessionId)) {
+    return
+  }
+  if (!get().sessions.some((session) => session.id === sessionId)) {
+    return
+  }
+  touchSession(sessionId)
+  set({ activeId: sessionId })
+  trimSessionCache()
+  void (async () => {
+    await ensureSessionLoaded(sessionId)
+    // 流式中与版本切换保持一致：不改分支，只尝试定位当前可见内容。
+    if (!getStreamController(sessionId)) {
+      updateSession(sessionId, (session) => revealPath(session, messageId))
+      persist(sessionId)
+    }
+    requestReveal(sessionId, messageId)
+  })()
 }
 
 export const renameSession = (id: string, title: string) => {

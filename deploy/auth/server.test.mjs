@@ -1052,3 +1052,68 @@ test('settings accept model and reasoning effort but reject invalid values', asy
   assert.equal((await f.data('settings', 'PATCH', { model: '' })).status, 400)
   assert.equal((await f.data('settings', 'PATCH', { model: 42 })).status, 400)
 })
+
+test('session search matches titles and message text across chats', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const state = (await f.data('state')).value
+  const chat = (id, title, userText, replyText) => ({
+    id,
+    title,
+    createdAt: 1,
+    updatedAt: 2,
+    messages: [
+      { id: 'u', role: 'user', content: userText, files: [], createdAt: 1 },
+      {
+        id: 'a',
+        role: 'assistant',
+        model: null,
+        thinking: false,
+        search: false,
+        prefix: false,
+        status: 'done',
+        createdAt: 1,
+        blocks: [{ type: 'text', text: replyText }],
+      },
+    ],
+    rootMessageId: 'u',
+  })
+  assert.equal(
+    (
+      await f.data('sessions/chat-one', 'PUT', {
+        generation: state.generation,
+        revision: null,
+        session: chat('chat-one', '火箭发射', '我想了解固体燃料', '固体火箭发动机使用固体推进剂'),
+      })
+    ).status,
+    200
+  )
+  assert.equal(
+    (
+      await f.data('sessions/chat-two', 'PUT', {
+        generation: state.generation,
+        revision: null,
+        session: chat('chat-two', '烹饪', '如何做番茄炒蛋', '番茄炒蛋的做法是先炒蛋'),
+      })
+    ).status,
+    200
+  )
+
+  const byText = await f.data('search', 'POST', { query: '固体推进剂' })
+  assert.equal(byText.status, 200)
+  assert.equal(byText.value.hits.length, 1)
+  assert.equal(byText.value.hits[0].sessionId, 'chat-one')
+  assert.equal(byText.value.hits[0].messageId, 'a')
+  assert.match(byText.value.hits[0].snippet, /固体推进剂/)
+
+  const byTitle = await f.data('search', 'POST', { query: '烹饪' })
+  assert.ok(
+    byTitle.value.hits.some((hit) => hit.sessionId === 'chat-two' && hit.role === 'title')
+  )
+
+  assert.equal((await f.data('search', 'POST', { query: '   ' })).value.hits.length, 0)
+  assert.equal((await f.data('search', 'POST', { query: 'x'.repeat(201) })).status, 400)
+  assert.equal((await f.data('search', 'POST', { query: 42 })).status, 400)
+  // Query strings are rejected on /data/* entirely.
+  assert.equal((await f.request('/data/search?q=x', { headers: apiHeaders })).status, 404)
+})

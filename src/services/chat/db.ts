@@ -8,6 +8,7 @@ const storage = SERVER_API ? server : local
 export const {
   loadSessionSummaries,
   loadSession,
+  searchSessions,
   saveSession,
   renameSession,
   deleteSession,

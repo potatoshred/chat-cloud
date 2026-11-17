@@ -1,0 +1,140 @@
+.search {
+  position: relative;
+  padding-bottom: 4px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-caption);
+}
+
+.field:focus-within {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-caption);
+  cursor: pointer;
+}
+
+.clear:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.hint {
+  padding: 14px 10px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 13px;
+  text-align: center;
+}
+
+.count {
+  padding: 4px 8px 6px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+}
+
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hit:hover {
+  background: var(--dsw-specific-selector);
+}
+
+.hitHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hitTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hitRole {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+}
+
+.hitSnippet {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
+  word-break: break-word;
+}
+
+.hitSnippet mark {
+  background: transparent;
+  color: var(--dsw-alias-brand-primary);
+  font-weight: 600;
+}

@@ -83,7 +83,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  margin-top: 24px;
+  margin-top: 8px;
 }
 
 .list {
@@ -285,7 +285,7 @@
   max-width: calc(100vw - 48px);
 
   .listWrap {
-    margin-top: 16px;
+    margin-top: 8px;
   }
 
   .sectionHeader {

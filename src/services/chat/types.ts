@@ -126,6 +126,26 @@ export type CommitSummary<T extends SessionSummary = SessionSummary> = {
   skippedCount: number
 }
 
+/** 会话全文搜索的命中角色：标题 / 用户消息 / 助手回复。 */
+export type SearchHitRole = 'title' | 'user' | 'assistant'
+
+/** 一条搜索命中：会话、消息、角色与带关键词的片段。 */
+export type SessionSearchHit = {
+  sessionId: string
+  sessionTitle: string
+  messageId: string | null
+  role: SearchHitRole
+  snippet: string
+  updatedAt: number
+}
+
+export type SessionSearchResult = {
+  query: string
+  total: number
+  truncated: boolean
+  hits: SessionSearchHit[]
+}
+
 /** 会话列表元数据；消息只在打开会话时加载。 */
 export type SessionSummary = Pick<Session, 'id' | 'title' | 'createdAt' | 'updatedAt'>
 

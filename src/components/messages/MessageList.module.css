@@ -35,3 +35,22 @@
   margin: 0 auto;
   padding-bottom: 24px;
 }
+
+/* 搜索定位命中时的短暂高亮；用 outline 不影响布局 */
+.revealHighlight {
+  animation: revealFlash 1.6s ease;
+}
+
+@keyframes revealFlash {
+  0%,
+  100% {
+    outline: 2px solid transparent;
+    outline-offset: 4px;
+  }
+
+  20%,
+  60% {
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 4px;
+  }
+}

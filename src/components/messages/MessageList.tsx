@@ -6,6 +6,7 @@ import {
   type MessageVersions,
 } from '../../services/chat/branches.js'
 import { selectMessageVersion } from '../../services/chat/store.js'
+import { clearReveal, useReveal } from '../../services/chat/revealState.js'
 import type { Session } from '../../services/chat/types.js'
 import { closeSearchPanel } from '../search/searchPanelState.js'
 import { AssistantMessage } from './AssistantMessage.js'
@@ -100,6 +101,32 @@ export const MessageList = ({
   }, [session.id, lastMessageId, scrollToBottom])
 
   useEffect(closeSearchPanel, [session.id, lastMessageId])
+
+  // 搜索命中定位：排在"切会话滚到底"之后，覆盖粘底并短暂高亮目标消息。
+  const reveal = useReveal((state) => state.target)
+  useLayoutEffect(() => {
+    if (!reveal || reveal.sessionId !== session.id) {
+      return
+    }
+    if (!session.messages.some((message) => message.id === reveal.messageId)) {
+      clearReveal()
+      return
+    }
+    const scroll = scrollRef.current
+    const target = scroll?.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(reveal.messageId)}"]`
+    )
+    if (!scroll || !target) {
+      return
+    }
+    stickyRef.current = false
+    scroll.scrollTop += target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16
+    scrollTopRef.current = scroll.scrollTop
+    target.classList.add(styles.revealHighlight)
+    const timer = window.setTimeout(() => target.classList.remove(styles.revealHighlight), 1600)
+    clearReveal()
+    return () => window.clearTimeout(timer)
+  }, [reveal, session])
 
   const selectVersion = useCallback(
     (messageId: string, anchorTop: number) => {
