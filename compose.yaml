@@ -32,6 +32,10 @@ services:
       - chat_data:/data
     restart: unless-stopped
     read_only: true
+    # SQLite needs a writable temp directory for large import commits (WAL transactions).
+    # Without this the read-only root makes commits fail with SQLITE_IOERR_GETTEMPPATH.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
     cap_drop:
       - ALL
     security_opt:

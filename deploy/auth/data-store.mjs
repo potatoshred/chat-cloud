@@ -99,6 +99,7 @@ export function createDataStore(filename) {
     PRAGMA synchronous=FULL;
     PRAGMA foreign_keys=ON;
     PRAGMA busy_timeout=5000;
+    PRAGMA temp_store=MEMORY;
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, json TEXT NOT NULL, revision TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS session_meta (id TEXT PRIMARY KEY, json TEXT NOT NULL, files TEXT NOT NULL);
