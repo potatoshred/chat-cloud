@@ -1,8 +1,8 @@
 import clsx from 'clsx'
-import { memo, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconEditOutline16, IconEllipsisOutline16, IconTrashOutline16 } from '../base/icons.js'
-import { renameSession, selectSession } from '../../services/chat/store.js'
+import { prefetchSession, renameSession, selectSession } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
@@ -20,6 +20,23 @@ export const SessionItem = memo(function SessionItem({
 }) {
   const t = useTranslate()
   const [editing, setEditing] = useState(false)
+  // 悬停一小会儿再预取，避免鼠标划过列表时连续下载。
+  const prefetchTimer = useRef<number | undefined>(undefined)
+  useEffect(
+    () => () => {
+      window.clearTimeout(prefetchTimer.current)
+    },
+    []
+  )
+  const schedulePrefetch = () => {
+    window.clearTimeout(prefetchTimer.current)
+    prefetchTimer.current = window.setTimeout(() => prefetchSession(session.id), 120)
+  }
+  const prefetchNow = () => {
+    window.clearTimeout(prefetchTimer.current)
+    prefetchSession(session.id)
+  }
+  const cancelPrefetch = () => window.clearTimeout(prefetchTimer.current)
   const displayTitle = session.title || t('untitledChat')
 
   if (editing) {
@@ -50,6 +67,9 @@ export const SessionItem = memo(function SessionItem({
   return (
     <div
       className={clsx(styles.item, active && styles.active)}
+      onPointerEnter={schedulePrefetch}
+      onPointerLeave={cancelPrefetch}
+      onPointerDown={prefetchNow}
       onClick={() => {
         selectSession(session.id)
         closeMobileSider()

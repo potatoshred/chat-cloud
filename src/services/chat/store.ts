@@ -47,7 +47,7 @@ import {
 /** 所有生成请求统一携带的助手身份说明 */
 const SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
-const SESSION_CACHE_LIMIT = 5
+const SESSION_CACHE_LIMIT = 10
 /** 安全审核固定开启，所有请求都走扩展模式 */
 const SAFETY_CHECK = { level: 'high' } as const
 /** 服务端判定 file_id 失效后，重新补传并重发的最多次数（不含首次请求） */
@@ -490,6 +490,18 @@ export const newChat = () => {
     set({ activeId: null })
     trimSessionCache()
   }
+}
+
+/** 悬停或按下会话项时预取内容，点击后即可直接渲染。 */
+export const prefetchSession = (id: string) => {
+  const state = get()
+  if (state.importingHistory || deletingSessions.has(id)) {
+    return
+  }
+  if (!state.sessions.some((session) => session.id === id)) {
+    return
+  }
+  void ensureSessionLoaded(id)
 }
 
 export const selectSession = (id: string) => {

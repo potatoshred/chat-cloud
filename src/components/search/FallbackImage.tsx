@@ -35,6 +35,8 @@ export const FallbackImage = memo(function FallbackImage({
         <img
           src={src}
           alt=""
+          loading="lazy"
+          decoding="async"
           onLoad={() => setLoadResult('loaded')}
           onError={() => setLoadResult('error')}
           style={{ display: loadResult === 'loaded' ? 'block' : 'none' }}
