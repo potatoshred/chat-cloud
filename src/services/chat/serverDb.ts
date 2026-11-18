@@ -37,8 +37,24 @@ export const getGeneration = async () => {
   }
   return generation
 }
+/** Last full state; lets unchanged polls answer with a tiny marker. */
+let cachedState: ServerState | null = null
 export const readServerState = async (): Promise<ServerState> => {
+  const previous = cachedState
+  if (previous) {
+    const reply = await storageJson<ServerState | { unchanged: true }>('state', 'POST', {
+      since: previous.version,
+      generation: previous.generation,
+    })
+    if ('unchanged' in reply) {
+      return previous
+    }
+    cachedState = reply
+    generation = reply.generation
+    return reply
+  }
   const state = await storageJson<ServerState>('state')
+  cachedState = state
   generation = state.generation
   return state
 }

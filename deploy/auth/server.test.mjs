@@ -1117,3 +1117,51 @@ test('session search matches titles and message text across chats', async (t) =>
   // Query strings are rejected on /data/* entirely.
   assert.equal((await f.request('/data/search?q=x', { headers: apiHeaders })).status, 404)
 })
+
+test('state polling answers unchanged only for the version the client holds', async (t) => {
+  const f = await storageFixture(t)
+  await f.login()
+  const initial = (await f.data('state')).value
+  const unchanged = await f.data('state', 'POST', {
+    since: initial.version,
+    generation: initial.generation,
+  })
+  assert.equal(unchanged.status, 200)
+  assert.equal(unchanged.value.unchanged, true)
+  assert.equal(unchanged.value.version, initial.version)
+
+  const session = {
+    id: 'chat',
+    title: '会话',
+    createdAt: 1,
+    updatedAt: 2,
+    messages: [],
+    rootMessageId: null,
+  }
+  const write = await f.data('sessions/chat', 'PUT', {
+    generation: initial.generation,
+    revision: null,
+    session,
+  })
+  assert.equal(write.status, 200)
+
+  // A write bumps the version, so the same poll now returns the full list.
+  const full = await f.data('state', 'POST', {
+    since: initial.version,
+    generation: initial.generation,
+  })
+  assert.equal(full.status, 200)
+  assert.equal(full.value.sessions.length, 1)
+  assert.notEqual(full.value.version, initial.version)
+
+  // A different generation (database replaced) must never be answered as unchanged.
+  const replaced = await f.data('state', 'POST', {
+    since: full.value.version,
+    generation: 'stale-generation',
+  })
+  assert.equal(replaced.value.unchanged, undefined)
+  assert.equal(replaced.value.sessions.length, 1)
+
+  assert.equal((await f.data('state', 'POST', {})).status, 400)
+  assert.equal((await f.data('state', 'POST', { since: 42 })).status, 400)
+})

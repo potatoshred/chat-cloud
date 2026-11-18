@@ -289,9 +289,25 @@ export function createDataStore(filename) {
         })
       const [kind, id, operation] = parts
       const method = request.method
-      if (kind === 'state' && parts.length === 1 && method === 'GET') {
-        json(response, state())
-        return
+      if (kind === 'state' && parts.length === 1) {
+        if (method === 'GET') {
+          json(response, state())
+          return
+        }
+        // Polling clients post the version they already hold so an unchanged state
+        // costs a few hundred bytes instead of the whole summary list.
+        if (method === 'POST') {
+          const input = await body(request, 1024)
+          if (!object(input) || typeof input.since !== 'string') fail(400, '版本无效。')
+          const version = getMeta('version')
+          const generation = getMeta('generation')
+          if (input.since === version && input.generation === generation) {
+            json(response, { unchanged: true, generation, version })
+            return
+          }
+          json(response, state())
+          return
+        }
       }
       if (kind === 'search' && parts.length === 1 && method === 'POST') {
         const input = await body(request, 4096)

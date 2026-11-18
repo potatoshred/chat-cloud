@@ -14,7 +14,7 @@ import {
 } from './branches.js'
 import * as db from './db.js'
 import { SERVER_API } from '../api/config.js'
-import { isSessionCurrent, readServerState } from './serverDb.js'
+import { isSessionCurrent, readServerState, type ServerState } from './serverDb.js'
 import { requestReveal } from './revealState.js'
 import {
   clearAllDrafts,
@@ -1164,6 +1164,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
 }
 
 let refreshingHistory = false
+/** 最近一次应用的远端状态；服务端报告未变化时它会原样返回，据此跳过整表重建。 */
+let lastRemoteState: ServerState | null = null
 /** Refresh remote changes without replacing local unsaved edits or a stream owned by this tab. */
 const refreshRemoteHistory = async () => {
   if (
@@ -1184,6 +1186,10 @@ const refreshRemoteHistory = async () => {
     if (epoch !== historyEpoch || get().importingHistory) {
       return
     }
+    if (remote === lastRemoteState) {
+      return
+    }
+    lastRemoteState = remote
     const state = get()
     const protectedIds = new Set([
       ...previouslyUnsaved,
