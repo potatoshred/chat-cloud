@@ -49,12 +49,25 @@ const THINK_LABEL_KEYS = {
 } as const
 
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
-export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: string | null }) {
+export const ChatInput = memo(function ChatInput({
+  sessionId,
+  pending = false,
+}: {
+  sessionId: string | null
+  /** 会话正文尚未加载：可以先编辑草稿，但不能发送 */
+  pending?: boolean
+}) {
   // 切换目标时释放录音、转写和 DOM 状态；文字与附件由草稿服务保留。
-  return <Input key={sessionId === null ? 'new' : `session:${sessionId}`} sessionId={sessionId} />
+  return (
+    <Input
+      key={sessionId === null ? 'new' : `session:${sessionId}`}
+      sessionId={sessionId}
+      pending={pending}
+    />
+  )
 })
 
-const Input = ({ sessionId }: { sessionId: string | null }) => {
+const Input = ({ sessionId, pending }: { sessionId: string | null; pending: boolean }) => {
   const t = useTranslate()
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
   const { text, attachments } = draft
@@ -158,10 +171,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const recording = voice.status === 'recording'
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
-  const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
+  const canSend =
+    !importingHistory && !streaming && voice.status === 'idle' && draftReady && !pending
 
   const send = () => {
     if (
+      pending ||
       useChatStore.getState().importingHistory ||
       voice.status !== 'idle' ||
       !prepareDraftMessage(getDraft(sessionId), useUploads.getState().tasks)

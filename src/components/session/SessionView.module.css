@@ -68,3 +68,17 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* 正文加载中：只占消息区，标题与输入框保持可用 */
+.pending {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  text-align: center;
+}

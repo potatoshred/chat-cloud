@@ -13,7 +13,7 @@ import {
 } from '../services/chat/store.js'
 import { SearchPanel } from '../components/search/SearchPanel.js'
 import { closeSearchPanel } from '../components/search/searchPanelState.js'
-import { SessionView } from '../components/session/SessionView.js'
+import { SessionPending, SessionView } from '../components/session/SessionView.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
@@ -52,6 +52,12 @@ export const App = () => {
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
   )
   const activeId = useChatStore((state) => state.activeId)
+  // 正文加载期间先用列表里的标题占位。
+  const activeTitle = useChatStore((state) =>
+    state.activeId === null
+      ? ''
+      : (state.sessions.find((item) => item.id === state.activeId)?.title ?? '')
+  )
   // 折叠时保留侧边栏做宽度过渡；inert 让隐藏的侧边栏不参与键盘焦点
   const siderSlotRef = useRef<HTMLDivElement>(null)
 
@@ -116,32 +122,26 @@ export const App = () => {
           ) : null}
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
-            {!ready || (activeId !== null && !session) ? (
+            {!ready ? (
               <div className={styles.loadingView}>
                 {isMobile ? <MobileHeader /> : null}
                 <div className={styles.loadingState} role="status" aria-live="polite">
-                  <span>
-                    {(!ready ? initError : sessionLoadError)
-                      ? t(!ready ? 'sessionListLoadFailed' : 'sessionLoadFailed')
-                      : t('sessionLoading')}
-                  </span>
-                  {(!ready ? initError : sessionLoadError) ? (
-                    <Button
-                      variant="outlined"
-                      size="m"
-                      onClick={() => {
-                        if (!ready) {
-                          void initChat()
-                        } else if (activeId !== null) {
-                          selectSession(activeId)
-                        }
-                      }}
-                    >
+                  <span>{initError ? t('sessionListLoadFailed') : t('sessionLoading')}</span>
+                  {initError ? (
+                    <Button variant="outlined" size="m" onClick={() => void initChat()}>
                       {t('retry')}
                     </Button>
                   ) : null}
                 </div>
               </div>
+            ) : activeId !== null && !session ? (
+              <SessionPending
+                sessionId={activeId}
+                title={activeTitle}
+                error={sessionLoadError}
+                siderCollapsed={siderCollapsed}
+                onRetry={() => selectSession(activeId)}
+              />
             ) : session ? (
               <SessionView
                 session={session}
