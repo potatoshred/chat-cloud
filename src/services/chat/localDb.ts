@@ -83,6 +83,9 @@ const getDB = () =>
     throw error
   }))
 
+/** IndexedDB 没有同步读取能力，首屏直接等异步结果。 */
+export const peekSessionSummaries = (): SessionSummary[] | null => null
+
 export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
   (await (await getDB()).getAll('sessionSummaries')).map(toSessionSummary)
 

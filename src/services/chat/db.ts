@@ -6,6 +6,7 @@ export type { StoredFile } from './localDb.js'
 export type { ImportMode } from './types.js'
 const storage = SERVER_API ? server : local
 export const {
+  peekSessionSummaries,
   loadSessionSummaries,
   loadSession,
   searchSessions,

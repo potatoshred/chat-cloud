@@ -328,6 +328,11 @@ export const initChat = (): Promise<void> => {
   set({ initError: false })
   initTask = (async () => {
     try {
+      // 有上次的摘要快照时先渲染，服务端版本确认后再以远端结果为准。
+      const cached = db.peekSessionSummaries()
+      if (cached && epoch === historyEpoch) {
+        set({ ready: true, sessions: sortSessions(cached) })
+      }
       const summaries = await db.loadSessionSummaries()
       if (epoch === historyEpoch) {
         set({ ready: true, sessions: sortSessions(summaries) })

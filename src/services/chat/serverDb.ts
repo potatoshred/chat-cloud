@@ -33,12 +33,40 @@ const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
 const path = (kind: string, id: string) => `${kind}/${encodeURIComponent(id)}`
 export const getGeneration = async () => {
   if (!generation) {
-    generation = (await storageJson<ServerState>('state')).generation
+    generation = (await readServerState()).generation
   }
   return generation
 }
+/** 上次成功拉取的摘要，供下次打开时先渲染；版本不符会被服务端纠正。 */
+const SNAPSHOT_KEY = 'chat-demo:state-snapshot'
+const loadSnapshot = (): ServerState | null => {
+  try {
+    const value = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) ?? 'null') as unknown
+    if (
+      value === null ||
+      typeof value !== 'object' ||
+      typeof (value as ServerState).version !== 'string' ||
+      typeof (value as ServerState).generation !== 'string' ||
+      !Array.isArray((value as ServerState).sessions)
+    ) {
+      return null
+    }
+    return value as ServerState
+  } catch {
+    return null
+  }
+}
+const saveSnapshot = (state: ServerState) => {
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(state))
+  } catch {
+    // 存储不可用时只是失去首屏加速
+  }
+}
 /** Last full state; lets unchanged polls answer with a tiny marker. */
-let cachedState: ServerState | null = null
+let cachedState: ServerState | null = loadSnapshot()
+/** 同步取上次的摘要用于首屏；没有快照时返回 null。 */
+export const peekSessionSummaries = (): SessionSummary[] | null => cachedState?.sessions ?? null
 export const readServerState = async (): Promise<ServerState> => {
   const previous = cachedState
   if (previous) {
@@ -51,11 +79,13 @@ export const readServerState = async (): Promise<ServerState> => {
     }
     cachedState = reply
     generation = reply.generation
+    saveSnapshot(reply)
     return reply
   }
   const state = await storageJson<ServerState>('state')
   cachedState = state
   generation = state.generation
+  saveSnapshot(state)
   return state
 }
 export const isSessionCurrent = (id: string, revision: string, remoteGeneration: string) => {

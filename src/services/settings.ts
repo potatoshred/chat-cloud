@@ -39,11 +39,46 @@ const KEYS = {
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
 
-const read = (key: string) => {
-  if (SERVER_API) {
-    return null
+/**
+ * 服务端模式的本地快照：只为首屏秒开，页面启动时先按上次的值渲染，
+ * 服务端返回后再覆盖。静态部署直接读 localStorage，不需要它。
+ */
+const SNAPSHOT_KEY = 'chat-demo:settings-snapshot'
+let snapshot: Record<string, string> | null = null
+const snapshotValues = (): Record<string, string> => {
+  if (snapshot === null) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) ?? '{}') as unknown
+      snapshot =
+        parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? Object.fromEntries(
+              Object.entries(parsed).filter((entry): entry is [string, string] => {
+                return typeof entry[1] === 'string'
+              })
+            )
+          : {}
+    } catch {
+      snapshot = {}
+    }
   }
+  return snapshot
+}
+const persistSnapshot = () => {
   try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshotValues()))
+  } catch {
+    // 存储不可用时只是失去首屏加速
+  }
+}
+/** 是否有可用于首屏的设置快照。 */
+export const hasCachedSettings = (): boolean =>
+  !SERVER_API || Object.keys(snapshotValues()).length > 0
+
+const read = (key: string) => {
+  try {
+    if (SERVER_API) {
+      return snapshotValues()[key] ?? null
+    }
     return localStorage.getItem(key)
   } catch {
     return null
@@ -51,10 +86,20 @@ const read = (key: string) => {
 }
 
 const write = (key: string, value: string | null) => {
-  if (SERVER_API) {
-    return
-  }
   try {
+    if (SERVER_API) {
+      // API Key 只经服务端，绝不写本地快照。
+      if (key === KEYS.apiKey) {
+        return
+      }
+      const values = snapshotValues()
+      snapshot =
+        value === null
+          ? Object.fromEntries(Object.entries(values).filter(([name]) => name !== key))
+          : { ...values, [key]: value }
+      persistSnapshot()
+      return
+    }
     if (value === null) {
       localStorage.removeItem(key)
     } else {
@@ -181,10 +226,23 @@ let settingsPending = 0
 let settingsSequence = 0
 let initialized = false
 let applyingRemote = false
+const encodeSetting = (key: keyof Settings, value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return key === 'location' ? JSON.stringify(value) : String(value)
+}
 const applyRemote = (value: Partial<Settings>) => {
   applyingRemote = true
   useSettings.setState({ ...value, apiKey: null })
   applyingRemote = false
+  // 同步到本地快照，下次首屏直接按这份值渲染。
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'apiKey') {
+      continue
+    }
+    write(KEYS[key as keyof typeof KEYS], encodeSetting(key as keyof Settings, item))
+  }
 }
 export const initServerSettings = async () => {
   if (!SERVER_API || initialized) {
