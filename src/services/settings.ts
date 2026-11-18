@@ -3,6 +3,7 @@ import type { TtsVoice } from './api/speech.js'
 import { normalizeLocation, type UserLocation } from './location.js'
 import { SERVER_API } from './api/config.js'
 import { storageFailure, storageJson } from './serverStorage.js'
+import { subscribeSync } from './syncTicker.js'
 
 export type Locale = 'zh-CN' | 'en-US'
 
@@ -288,10 +289,7 @@ export const initServerSettings = async () => {
       /* A failed refresh leaves the last loaded settings visible. */
     }
   }
-  window.addEventListener('focus', () => {
+  subscribeSync(() => {
     void refresh()
   })
-  window.setInterval(() => {
-    void refresh()
-  }, 30_000)
 }

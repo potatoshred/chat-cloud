@@ -13,6 +13,7 @@ import type { FileAttachment } from './types.js'
 import { SERVER_API } from '../api/config.js'
 import { storageFailure, storageJson } from '../serverStorage.js'
 import { useSettings } from '../settings.js'
+import { subscribeSync } from '../syncTicker.js'
 import * as db from './db.js'
 import { getKnownGeneration } from './serverDb.js'
 
@@ -359,20 +360,16 @@ export const initServerDrafts = async () => {
     return
   }
   await refreshDrafts()
-  const refresh = () => {
+  subscribeSync(() => {
     if (document.visibilityState !== 'hidden') {
       void refreshDrafts().catch(() => {})
     }
-  }
-  window.addEventListener('focus', refresh)
-  window.setInterval(refresh, 30_000)
+  })
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       dirtyDrafts.forEach((id) => {
         void saveDraft(id)
       })
-    } else {
-      refresh()
     }
   })
 }

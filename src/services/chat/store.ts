@@ -5,6 +5,7 @@ import type { CreateMessageRequest } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import { useSettings } from '../settings.js'
+import { subscribeSync } from '../syncTicker.js'
 import {
   appendBranch,
   getVisibleMessages,
@@ -259,9 +260,7 @@ export const bindChatPersistence = () => {
   const refresh = () => {
     void refreshRemoteHistory()
   }
-  window.addEventListener('focus', refresh)
-  // Cross-device sync is also triggered by focus; the timer only covers idle tabs.
-  const syncTimer = SERVER_API ? window.setInterval(refresh, 30_000) : undefined
+  const unsubscribeSync = SERVER_API ? subscribeSync(refresh) : undefined
   // Persist partial replies regularly while the owning device receives the stream.
   const checkpoint = SERVER_API
     ? window.setInterval(() => {
@@ -276,8 +275,7 @@ export const bindChatPersistence = () => {
   return () => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
     window.removeEventListener('pagehide', save)
-    window.removeEventListener('focus', refresh)
-    window.clearInterval(syncTimer)
+    unsubscribeSync?.()
     window.clearInterval(checkpoint)
   }
 }
