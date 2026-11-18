@@ -56,6 +56,18 @@ export const AssistantMessage = memo(function AssistantMessage({
   const copyText = responseText || notice?.text
   const waiting = streaming && view.steps.length === 0 && !view.answer && !message.thinking
   const summaryEntry = `${message.id}-summary`
+  // 首字耗时与 TPS（从首字开始算），仅对记录了耗时的回复展示。
+  const outputTokens = message.usage?.output_tokens ?? 0
+  const firstTokenSeconds =
+    typeof message.firstTokenMs === 'number' ? message.firstTokenMs / 1000 : null
+  const streamingSeconds =
+    typeof message.firstTokenMs === 'number' && typeof message.durationMs === 'number'
+      ? (message.durationMs - message.firstTokenMs) / 1000
+      : 0
+  const tokensPerSecond =
+    firstTokenSeconds !== null && streamingSeconds > 0 && outputTokens > 0
+      ? Math.round(outputTokens / streamingSeconds)
+      : null
   return (
     <div className={styles.message} data-message-id={message.id}>
       {refused ? null : (
@@ -157,6 +169,16 @@ export const AssistantMessage = memo(function AssistantMessage({
               }}
             />
           </div>
+          {firstTokenSeconds !== null || tokensPerSecond !== null ? (
+            <span className={styles.metrics}>
+              {firstTokenSeconds !== null ? (
+                <span>{t('messageFirstToken', { value: `${firstTokenSeconds.toFixed(1)}s` })}</span>
+              ) : null}
+              {tokensPerSecond !== null ? (
+                <span>{t('messageTokensPerSecond', { value: tokensPerSecond })}</span>
+              ) : null}
+            </span>
+          ) : null}
           {isLast && canContinueReply(message) ? (
             <Button
               variant="outlined"

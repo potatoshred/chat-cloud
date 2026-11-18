@@ -1221,7 +1221,13 @@ test('usage reports the last 24 hours of assistant replies', async (t) => {
     rootMessageId: 'u1',
     messages: [
       { id: 'u1', role: 'user', content: '你好', files: [], createdAt: now - 2 * 3600_000 },
-      reply('recent', 'done', now - 3600_000, { usage: usage(100, 30, 10, 20, 2) }),
+      reply('recent', 'done', now - 3600_000, {
+        usage: usage(100, 30, 10, 20, 2),
+        thinking: true,
+        reasoningEffort: 'high',
+        firstTokenMs: 800,
+        durationMs: 2400,
+      }),
       reply('streaming', 'streaming', now - 60_000, { usage: usage(500, 500, 0, 0, 0) }),
       reply('no-usage', 'done', now - 120_000),
       reply('old', 'done', now - 25 * 3600_000, { usage: usage(999, 999, 0, 0) }),

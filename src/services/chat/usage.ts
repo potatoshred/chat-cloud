@@ -17,6 +17,14 @@ export type UsageRecord = {
   cacheCreationTokens: number
   cacheReadTokens: number
   searches: number
+  /** 是否开启深度思考 */
+  thinking: boolean
+  /** 思考强度；关闭思考或历史消息缺省时为 null */
+  reasoningEffort: string | null
+  /** 首字耗时（毫秒）；没有内容或未记录时为 null */
+  firstTokenMs: number | null
+  /** 请求总耗时（毫秒）；未记录时为 null */
+  durationMs: number | null
 }
 
 export type UsageTotals = {
@@ -44,6 +52,9 @@ const SEARCH_KINDS = new Set(['search', 'deep_search', 'image_search', 'deep_ima
 
 const tokenCount = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : 0
+
+const millis = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null
 
 const countSearches = (message: Session['messages'][number]): number => {
   const reported =
@@ -86,6 +97,10 @@ export const collectUsage = (session: Session): Omit<UsageRecord, 'sessionId' | 
       cacheCreationTokens: tokenCount(message.usage.cache_creation_input_tokens),
       cacheReadTokens: tokenCount(message.usage.cache_read_input_tokens),
       searches: countSearches(message),
+      thinking: message.thinking === true,
+      reasoningEffort: message.reasoningEffort ?? null,
+      firstTokenMs: millis(message.firstTokenMs),
+      durationMs: millis(message.durationMs),
     })
   }
   return records

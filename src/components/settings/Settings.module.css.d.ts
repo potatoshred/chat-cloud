@@ -51,10 +51,14 @@ declare const styles: {
   readonly "usageList": string;
   readonly "usageRow": string;
   readonly "usageRowHeader": string;
+  readonly "usageWhen": string;
   readonly "usageTime": string;
   readonly "usageModel": string;
   readonly "usageTokens": string;
+  readonly "usageCache": string;
   readonly "usageSearches": string;
+  readonly "usageThinking": string;
+  readonly "usageLatency": string;
   readonly "usageStatus": string;
   readonly "usageEmpty": string;
   readonly "usageNote": string;

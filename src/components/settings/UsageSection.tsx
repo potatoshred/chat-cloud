@@ -16,6 +16,12 @@ const STATUS_KEYS = {
 
 const EMPTY = '—'
 
+const EFFORT_KEYS = {
+  low: 'settingsReasoningEffortLow',
+  high: 'settingsReasoningEffortHigh',
+  max: 'settingsReasoningEffortMax',
+} as const
+
 /** 用量：账户余额 + 最近 24 小时请求汇总与明细。 */
 export const UsageSection = () => {
   const t = useTranslate()
@@ -112,30 +118,59 @@ export const UsageSection = () => {
         ) : (
           <div className={styles.usageList}>
             <div className={styles.usageRowHeader}>
-              <span>{t('settingsUsageColumnTime')}</span>
-              <span>{t('settingsUsageColumnModel')}</span>
-              <span>{t('settingsUsageColumnTokens')}</span>
+              <span>{t('settingsUsageColumnWhen')}</span>
+              <span>{t('settingsUsageColumnInput')}</span>
+              <span>{t('settingsUsageColumnCache')}</span>
+              <span>{t('settingsUsageColumnOutput')}</span>
               <span>{t('settingsUsageColumnSearches')}</span>
+              <span>{t('settingsUsageColumnThinking')}</span>
+              <span>{t('settingsUsageColumnLatency')}</span>
               <span>{t('settingsUsageColumnStatus')}</span>
             </div>
             {report.entries.map((entry) => {
               const statusKey =
                 STATUS_KEYS[entry.status as keyof typeof STATUS_KEYS] ?? null
+              const effortKey =
+                entry.thinking && entry.reasoningEffort
+                  ? (EFFORT_KEYS[entry.reasoningEffort as keyof typeof EFFORT_KEYS] ?? null)
+                  : null
+              const thinking = entry.thinking
+                ? (effortKey ? t(effortKey) : EMPTY)
+                : t('settingsUsageThinkingOff')
+              // TPS 从首字开始算：输出 token / 首字之后的时间。
+              const latency =
+                entry.firstTokenMs === null || entry.durationMs === null
+                  ? EMPTY
+                  : `${(entry.firstTokenMs / 1000).toFixed(1)}s`
+              const elapsed =
+                entry.firstTokenMs === null || entry.durationMs === null
+                  ? 0
+                  : (entry.durationMs - entry.firstTokenMs) / 1000
+              const tps =
+                elapsed > 0 && entry.outputTokens > 0
+                  ? `${format(Math.round(entry.outputTokens / elapsed))}/s`
+                  : null
               return (
                 <div
                   key={`${entry.sessionId}:${entry.messageId}`}
                   className={styles.usageRow}
                   title={entry.sessionTitle}
                 >
-                  <span className={styles.usageTime}>
-                    {formatDateTime(entry.at, locale) ?? EMPTY}
+                  <span className={styles.usageWhen}>
+                    <span className={styles.usageTime}>
+                      {formatDateTime(entry.at, locale) ?? EMPTY}
+                    </span>
+                    <span className={styles.usageModel}>{entry.model ?? EMPTY}</span>
                   </span>
-                  <span className={styles.usageModel}>{entry.model ?? EMPTY}</span>
-                  <span className={styles.usageTokens}>
-                    {format(entry.inputTokens)} / {format(entry.outputTokens)}
-                  </span>
+                  <span className={styles.usageTokens}>{format(entry.inputTokens)}</span>
+                  <span className={styles.usageCache}>{format(entry.cacheReadTokens)}</span>
+                  <span className={styles.usageTokens}>{format(entry.outputTokens)}</span>
                   <span className={styles.usageSearches}>
                     {entry.searches > 0 ? format(entry.searches) : EMPTY}
+                  </span>
+                  <span className={styles.usageThinking}>{thinking}</span>
+                  <span className={styles.usageLatency}>
+                    {tps ? `${latency} · ${tps}` : latency}
                   </span>
                   <span className={styles.usageStatus}>
                     {statusKey ? t(statusKey) : entry.status}

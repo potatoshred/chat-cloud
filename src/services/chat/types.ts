@@ -3,6 +3,7 @@ import type { ApiErrorKind } from '../api/client.js'
 import type {
   ChatModel,
   MessageUsage,
+  ReasoningEffort,
   ServerToolBlock,
   StopDetails,
   StopReason,
@@ -79,6 +80,8 @@ export type AssistantMessage = MessageBranch & {
   model: ChatModel | null
   /** 请求时是否开启深度思考 */
   thinking?: boolean
+  /** 请求时的思考强度；关闭思考或历史消息缺省时为空 */
+  reasoningEffort?: ReasoningEffort
   /** 请求时是否声明 deepseek_web_search；关闭时仍声明 deepseek_read_url */
   search?: boolean
   /** 本轮请求的系统信息快照；各回答版本独立保存，续写沿用。历史消息中缺省的快照保持为空。 */
@@ -92,6 +95,10 @@ export type AssistantMessage = MessageBranch & {
   stopDetails?: StopDetails
   /** 最近一次请求的用量，续写后更新 */
   usage?: MessageUsage
+  /** 首字耗时（毫秒，从请求发出到第一个内容增量）；无内容或上传失败时为空 */
+  firstTokenMs?: number
+  /** 最近一次请求的总耗时（毫秒，从请求发出到结束） */
+  durationMs?: number
   error?: {
     /** upload：发送前补传附件失败，请求没有发出 */
     kind: ApiErrorKind | 'upload'

@@ -55,7 +55,9 @@ const USAGE_HOURS = 24
 const USAGE_LIMIT = 200
 const USAGE_STATUSES = new Set(['done', 'stopped', 'error'])
 const SEARCH_KINDS = new Set(['search', 'deep_search', 'image_search', 'deep_image_search'])
+const REASONING_EFFORTS = new Set(['low', 'high', 'max'])
 const tokenCount = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value) : 0)
+const millis = (value) => (Number.isFinite(value) && value >= 0 ? Math.round(value) : null)
 
 function countSearches(message) {
   const reported = message.usage?.server_tool_use?.web_search_requests
@@ -84,6 +86,12 @@ function extractUsage(session) {
       cacheCreationTokens: tokenCount(message.usage.cache_creation_input_tokens),
       cacheReadTokens: tokenCount(message.usage.cache_read_input_tokens),
       searches: countSearches(message),
+      thinking: message.thinking === true,
+      reasoningEffort: REASONING_EFFORTS.has(message.reasoningEffort)
+        ? message.reasoningEffort
+        : null,
+      firstTokenMs: millis(message.firstTokenMs),
+      durationMs: millis(message.durationMs),
     })
   }
   return records

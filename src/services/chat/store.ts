@@ -282,13 +282,14 @@ export const bindChatPersistence = () => {
 
 /** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
 const createReply = (): AssistantMessage => {
-  const { thinking, search, model } = useSettings.getState()
+  const { thinking, search, model, reasoningEffort } = useSettings.getState()
   return {
     id: createId(),
     role: 'assistant',
     createdAt: Date.now(),
     model,
     thinking,
+    reasoningEffort: thinking ? reasoningEffort : undefined,
     search,
     prefix: true,
     status: 'pending',
@@ -787,12 +788,15 @@ export const continueReply = (sessionId: string, messageId: string) => {
   ) {
     return
   }
-  const { thinking, search, model } = useSettings.getState()
+  const { thinking, search, model, reasoningEffort } = useSettings.getState()
   const reply: AssistantMessage = {
     ...previous,
     // 未记录请求配置的回复，续写时使用当前模型和开关。
     model: previous.model ?? model,
     thinking: previous.thinking ?? thinking,
+    reasoningEffort:
+      previous.reasoningEffort ??
+      ((previous.thinking ?? thinking) ? reasoningEffort : undefined),
     search: previous.search ?? search,
     status: 'pending',
     stopReason: undefined,
@@ -1048,7 +1052,21 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   }
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
   let reply = initial
+  // 续写/重试沿用旧消息时先清掉上一轮的耗时，避免请求失败后留下过期数据。
+  reply = { ...reply, firstTokenMs: undefined, durationMs: undefined }
   let frame = 0
+  /** 本轮请求发出的时间与首字时间；上传/准备阶段失败时保持空。 */
+  let attemptStartedAt = 0
+  let firstTokenAt: number | null = null
+  const settle = (
+    status: Parameters<typeof settleReply>[1],
+    at = Date.now(),
+    error?: Parameters<typeof settleReply>[3]
+  ) => ({
+    ...settleReply(reply, status, at, error),
+    firstTokenMs: firstTokenAt === null ? undefined : firstTokenAt - attemptStartedAt,
+    durationMs: attemptStartedAt === 0 ? undefined : at - attemptStartedAt,
+  })
   const flush = () => {
     cancelAnimationFrame(frame)
     frame = 0
@@ -1096,7 +1114,15 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           controller.signal
         )
         const blockIndexes = new Map<number, number>()
+        attemptStartedAt = Date.now()
+        firstTokenAt = null
         for await (const event of events) {
+          if (firstTokenAt === null && event.type === 'content_block_delta') {
+            const deltaType = event.delta.type
+            if (deltaType === 'text_delta' || deltaType === 'thinking_delta') {
+              firstTokenAt = Date.now()
+            }
+          }
           receivedContent ||= event.type === 'content_block_start'
           if (
             event.type === 'message_delta' &&
@@ -1117,15 +1143,15 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             frame ||= requestAnimationFrame(flush)
           }
         }
-        reply = settleReply(reply, 'done', Date.now())
+        reply = settle('done', Date.now())
         break
       } catch (error) {
         if (controller.signal.aborted) {
-          reply = settleReply(reply, 'stopped', Date.now())
+          reply = settle('stopped', Date.now())
           break
         }
         if (preparing) {
-          reply = settleReply(reply, 'error', Date.now(), {
+          reply = settle('error', Date.now(), {
             kind: 'upload',
             message: '',
             localMessage: describeUploadError(error),
@@ -1141,23 +1167,23 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         ) {
           await waitForRetry(attempt, controller.signal)
           if (controller.signal.aborted) {
-            reply = settleReply(reply, 'stopped', Date.now())
+            reply = settle('stopped', Date.now())
             break
           }
           continue
         }
         if (error instanceof ApiError && error.kind === 'interrupted' && reply.stopReason) {
           // 已收到 message_delta 的结束原因，只是缺了结尾的 message_stop
-          reply = settleReply(reply, 'done', Date.now())
+          reply = settle('done', Date.now())
         } else if (error instanceof ApiError) {
-          reply = settleReply(reply, 'error', Date.now(), {
+          reply = settle('error', Date.now(), {
             kind: error.kind,
             message: error.message,
             status: error.status,
             localMessage: error.localMessage,
           })
         } else {
-          reply = settleReply(reply, 'error', Date.now(), {
+          reply = settle('error', Date.now(), {
             kind: 'protocol',
             message: error instanceof Error ? error.message : String(error),
           })

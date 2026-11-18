@@ -9,6 +9,7 @@ declare const styles: {
   readonly "bottom": string;
   readonly "alwaysShow": string;
   readonly "continueButton": string;
+  readonly "metrics": string;
   readonly "summary": string;
   readonly "summaryActive": string;
 };
