@@ -412,6 +412,30 @@ test('proxy checks sessions, same-origin requests and route allowlist before con
   assert.equal(calls, 1)
 })
 
+test('proxy exposes the balance endpoint with the server key', async (t) => {
+  const calls = []
+  const upstream = await upstreamFixture(t, async (request, response) => {
+    calls.push({ method: request.method, url: request.url, headers: request.headers })
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify({ is_available: true, balance_infos: [] }))
+  })
+  const f = await fixture(
+    t,
+    {},
+    { apiProxy: createApiProxy({ apiKey: serverKey, baseURL: upstream.baseURL }) }
+  )
+  await f.login()
+  const response = await f.request('/api/user/balance', { headers: apiHeaders })
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { is_available: true, balance_infos: [] })
+  assert.equal(calls[0].method, 'GET')
+  assert.equal(calls[0].url, '/user/balance')
+  assert.equal(calls[0].headers.authorization, `Bearer ${serverKey}`)
+  assert.equal(calls[0].headers['x-api-key'], undefined)
+  // Allowlist is exact: query strings do not match.
+  assert.equal((await f.request('/api/user/balance?x=1', { headers: apiHeaders })).status, 404)
+})
+
 test('proxy injects the server key, preserves multipart/binary requests, and strips browser credentials', async (t) => {
   const calls = []
   const upstream = await upstreamFixture(t, async (request, response) => {
@@ -1164,4 +1188,102 @@ test('state polling answers unchanged only for the version the client holds', as
 
   assert.equal((await f.data('state', 'POST', {})).status, 400)
   assert.equal((await f.data('state', 'POST', { since: 42 })).status, 400)
+})
+
+test('usage reports the last 24 hours of assistant replies', async (t) => {
+  const f = await storageFixture(t)
+  assert.equal((await f.data('usage')).status, 401)
+  await f.login()
+  const state = (await f.data('state')).value
+  const now = Date.now()
+  const usage = (input, output, cacheCreate, cacheRead, searches) => ({
+    input_tokens: input,
+    output_tokens: output,
+    cache_creation_input_tokens: cacheCreate,
+    cache_read_input_tokens: cacheRead,
+    ...(searches === undefined ? {} : { server_tool_use: { web_search_requests: searches, tool_search: 0 } }),
+  })
+  const reply = (id, status, createdAt, extras = {}) => ({
+    id,
+    role: 'assistant',
+    model: 'deepseek-flash',
+    prefix: false,
+    status,
+    createdAt,
+    blocks: [],
+    ...extras,
+  })
+  const session = {
+    id: 'usage-chat',
+    title: '用量会话',
+    createdAt: now - 2 * 3600_000,
+    updatedAt: now,
+    rootMessageId: 'u1',
+    messages: [
+      { id: 'u1', role: 'user', content: '你好', files: [], createdAt: now - 2 * 3600_000 },
+      reply('recent', 'done', now - 3600_000, { usage: usage(100, 30, 10, 20, 2) }),
+      reply('streaming', 'streaming', now - 60_000, { usage: usage(500, 500, 0, 0, 0) }),
+      reply('no-usage', 'done', now - 120_000),
+      reply('old', 'done', now - 25 * 3600_000, { usage: usage(999, 999, 0, 0) }),
+      reply('stopped', 'stopped', now - 1800_000, { usage: usage(7, 0, 0, 0) }),
+    ],
+  }
+  assert.equal(
+    (
+      await f.data('sessions/usage-chat', 'PUT', {
+        generation: state.generation,
+        revision: null,
+        session,
+      })
+    ).status,
+    200
+  )
+
+  const first = await f.data('usage')
+  assert.equal(first.status, 200)
+  assert.equal(first.value.hours, 24)
+  assert.equal(first.value.totals.requests, 2)
+  assert.equal(first.value.totals.inputTokens, 107)
+  assert.equal(first.value.totals.outputTokens, 30)
+  assert.equal(first.value.totals.cacheCreationTokens, 10)
+  assert.equal(first.value.totals.cacheReadTokens, 20)
+  assert.equal(first.value.totals.searches, 2)
+  assert.deepEqual(
+    first.value.entries.map((entry) => entry.messageId),
+    ['stopped', 'recent']
+  )
+  assert.equal(first.value.entries[1].sessionId, 'usage-chat')
+  assert.equal(first.value.entries[1].sessionTitle, '用量会话')
+  assert.equal(first.value.entries[1].model, 'deepseek-flash')
+  assert.equal(first.value.truncated, false)
+
+  // Query strings are rejected on /data/* entirely.
+  assert.equal((await f.request('/data/usage?hours=1', { headers: apiHeaders })).status, 404)
+
+  // A new write bumps meta.version, so the cached index is rebuilt.
+  const second = {
+    id: 'usage-chat-2',
+    title: '第二个会话',
+    createdAt: now,
+    updatedAt: now,
+    rootMessageId: 'u2',
+    messages: [
+      { id: 'u2', role: 'user', content: '再来', files: [], createdAt: now },
+      reply('a2', 'done', now, { usage: usage(1, 2, 0, 0, 0) }),
+    ],
+  }
+  assert.equal(
+    (
+      await f.data('sessions/usage-chat-2', 'PUT', {
+        generation: state.generation,
+        revision: null,
+        session: second,
+      })
+    ).status,
+    200
+  )
+  const after = await f.data('usage')
+  assert.equal(after.value.totals.requests, 3)
+  assert.equal(after.value.totals.inputTokens, 108)
+  assert.equal(after.value.totals.outputTokens, 32)
 })

@@ -41,6 +41,23 @@ declare const styles: {
   readonly "importModeDescription": string;
   readonly "deleteConfirm": string;
   readonly "deleteActions": string;
+  readonly "usageSection": string;
+  readonly "usageHeading": string;
+  readonly "usageHint": string;
+  readonly "usageMetrics": string;
+  readonly "usageMetric": string;
+  readonly "usageMetricValue": string;
+  readonly "usageMetricLabel": string;
+  readonly "usageList": string;
+  readonly "usageRow": string;
+  readonly "usageRowHeader": string;
+  readonly "usageTime": string;
+  readonly "usageModel": string;
+  readonly "usageTokens": string;
+  readonly "usageSearches": string;
+  readonly "usageStatus": string;
+  readonly "usageEmpty": string;
+  readonly "usageNote": string;
 };
 export = styles;
 

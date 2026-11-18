@@ -65,6 +65,15 @@ export const IconDarkOutline16 = () => (
   </svg>
 )
 
+/** 用量图标：三根高低不同的柱子 */
+export const IconChartOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3.2 12.8V9.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <path d="M8 12.8V5.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <path d="M12.8 12.8V7.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+)
+
 export const IconDataOutline16 = () => (
   <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path

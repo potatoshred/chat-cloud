@@ -50,6 +50,73 @@ function extractSearchDocs(session) {
   return docs
 }
 
+// 用量统计的提取规则。客户端 src/services/chat/usage.ts 有同规则实现，改动需同步。
+const USAGE_HOURS = 24
+const USAGE_LIMIT = 200
+const USAGE_STATUSES = new Set(['done', 'stopped', 'error'])
+const SEARCH_KINDS = new Set(['search', 'deep_search', 'image_search', 'deep_image_search'])
+const tokenCount = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value) : 0)
+
+function countSearches(message) {
+  const reported = message.usage?.server_tool_use?.web_search_requests
+  if (Number.isFinite(reported) && reported > 0) return Math.round(reported)
+  let searches = 0
+  for (const block of Array.isArray(message.blocks) ? message.blocks : []) {
+    if (block?.type === 'server_tool_use' && SEARCH_KINDS.has(block.kind)) searches++
+  }
+  return searches
+}
+
+/** 从一条会话提取每条助手回复的用量；导入历史（无 usage）与生成中的回复跳过。 */
+function extractUsage(session) {
+  const records = []
+  for (const message of Array.isArray(session.messages) ? session.messages : []) {
+    if (!message || message.role !== 'assistant') continue
+    if (!message.usage || !Number.isFinite(message.createdAt)) continue
+    if (!USAGE_STATUSES.has(message.status)) continue
+    records.push({
+      messageId: typeof message.id === 'string' ? message.id : '',
+      at: message.createdAt,
+      model: typeof message.model === 'string' ? message.model : null,
+      status: message.status,
+      inputTokens: tokenCount(message.usage.input_tokens),
+      outputTokens: tokenCount(message.usage.output_tokens),
+      cacheCreationTokens: tokenCount(message.usage.cache_creation_input_tokens),
+      cacheReadTokens: tokenCount(message.usage.cache_read_input_tokens),
+      searches: countSearches(message),
+    })
+  }
+  return records
+}
+
+/** 只缓存原始记录，24 小时窗口在每次查询时计算（窗口会随时间滑动）。 */
+function summarizeUsage(records, now) {
+  const since = now - USAGE_HOURS * 3600_000
+  const recent = records.filter((record) => record.at >= since).sort((a, b) => b.at - a.at)
+  const totals = {
+    requests: recent.length,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    searches: 0,
+  }
+  for (const record of recent) {
+    totals.inputTokens += record.inputTokens
+    totals.outputTokens += record.outputTokens
+    totals.cacheCreationTokens += record.cacheCreationTokens
+    totals.cacheReadTokens += record.cacheReadTokens
+    totals.searches += record.searches
+  }
+  return {
+    hours: USAGE_HOURS,
+    since,
+    totals,
+    entries: recent.slice(0, USAGE_LIMIT),
+    truncated: recent.length > USAGE_LIMIT,
+  }
+}
+
 /** 关键词命中处的片段：前后各取约 40 字，按代理对边界对齐。未命中返回 null。 */
 function makeSnippet(text, query) {
   const at = text.toLowerCase().indexOf(query.toLowerCase())
@@ -265,6 +332,29 @@ export function createDataStore(filename) {
     hits.sort((a, b) => b.updatedAt - a.updatedAt)
     return { query, total: hits.length, truncated: hits.length > 50, hits: hits.slice(0, 50) }
   }
+  // 用量索引同搜索：按 meta.version 缓存未过滤的原始记录。
+  let usageCache = { version: null, records: [] }
+  const buildUsageIndex = () => {
+    const version = getMeta('version')
+    if (usageCache.version === version) return usageCache.records
+    const records = []
+    for (const row of db.prepare('SELECT id,json FROM sessions').all()) {
+      let session
+      try {
+        session = JSON.parse(row.json)
+      } catch {
+        continue
+      }
+      const sessionTitle = typeof session.title === 'string' ? session.title : ''
+      for (const record of extractUsage(session)) {
+        records.push({ sessionId: row.id, sessionTitle, ...record })
+      }
+    }
+    usageCache = { version, records }
+    return records
+  }
+  const usageReport = () => summarizeUsage(buildUsageIndex(), Date.now())
+
   const json = (response, value, status = 200) => {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
     response.end(JSON.stringify(value))
@@ -315,6 +405,10 @@ export function createDataStore(filename) {
         const query = input.query.trim()
         if (query.length > 200) fail(400, '搜索关键词过长。')
         json(response, searchSessions(query))
+        return
+      }
+      if (kind === 'usage' && parts.length === 1 && method === 'GET') {
+        json(response, usageReport())
         return
       }
       if (kind === 'sessions' && parts.length === 2 && validId(id)) {

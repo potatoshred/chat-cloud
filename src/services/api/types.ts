@@ -26,6 +26,19 @@ export type ModelsResponse = {
   data: ModelInfo[]
 }
 
+/** GET /user/balance 返回的单个币种余额；金额是格式化后的字符串。 */
+export type BalanceInfo = {
+  currency: 'CNY' | 'USD' | string
+  total_balance: string
+  granted_balance: string
+  topped_up_balance: string
+}
+
+export type UserBalance = {
+  is_available: boolean
+  balance_infos: BalanceInfo[]
+}
+
 // ---------- 响应：内容块 ----------
 
 /** 正文引用：服务端把模型的引用标记还原为来源，挂在对应文本块上 */

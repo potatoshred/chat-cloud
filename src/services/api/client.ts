@@ -10,6 +10,7 @@ import type {
   MessageStreamEvent,
   ModelInfo,
   ModelsResponse,
+  UserBalance,
 } from './types.js'
 
 export { API_ORIGIN } from './config.js'
@@ -115,6 +116,19 @@ export const fetchModels = async (apiKey: string, signal?: AbortSignal): Promise
   })
   const body = (await response.json()) as ModelsResponse
   return Array.isArray(body?.data) ? body.data : []
+}
+
+/**
+ * 查询账户余额（GET /user/balance）。SERVER_API 下鉴权由服务端代理注入，
+ * 静态部署使用本地 API Key。
+ */
+export const fetchBalance = async (apiKey: string, signal?: AbortSignal): Promise<UserBalance> => {
+  const response = await request(`${API_ORIGIN}/user/balance`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal,
+  })
+  return (await response.json()) as UserBalance
 }
 
 /**

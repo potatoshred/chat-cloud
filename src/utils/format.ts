@@ -20,3 +20,20 @@ export const monthKey = (value: string | number | Date): string | null => {
   const date = toDate(value)
   return date ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}` : null
 }
+
+/** 按语言格式化日期时间；非法值返回 null。 */
+export const formatDateTime = (
+  value: string | number | Date,
+  locale: string,
+  options: Intl.DateTimeFormatOptions = {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }
+): string | null => {
+  const date = toDate(value)
+  return date ? new Intl.DateTimeFormat(locale, options).format(date) : null
+}

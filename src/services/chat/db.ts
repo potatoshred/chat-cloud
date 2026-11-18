@@ -10,6 +10,7 @@ export const {
   loadSessionSummaries,
   loadSession,
   searchSessions,
+  loadUsage,
   saveSession,
   renameSession,
   deleteSession,

@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useRef, useState, type ReactNode } from 'react'
 import {
+  IconChartOutline16,
   IconDarkOutline16,
   IconDataOutline16,
   IconDownloadOutline16,
@@ -30,13 +31,15 @@ import {
   useSettings,
   type ThemePreference,
 } from '../../services/settings.js'
-import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { LogoutSetting } from './LogoutSetting.js'
+import { SettingCell, type Status } from './SettingCell.js'
+import { UsageSection } from './UsageSection.js'
 import { useModels } from './useModels.js'
 import { SERVER_API } from '../../services/api/config.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
@@ -58,6 +61,7 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     icon: <IconSettingsOutline16 />,
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  { value: 'usage', label: 'settingDialogAsideUsageOptionLabel', icon: <IconChartOutline16 /> },
 ]
 
 const SettingsContent = () => {
@@ -109,6 +113,8 @@ const SettingsContent = () => {
               <LocationSetting />
               <LogoutSetting />
             </>
+          ) : section === 'usage' ? (
+            <UsageSection />
           ) : (
             <>
               {SERVER_API ? (
@@ -488,8 +494,6 @@ const ThemeSetting = () => {
 }
 
 /** `reason` 为失败原因的文案 key，展示时按当前语言翻译后填入 `message` 参数。 */
-type Status = (TranslationMessage & { error?: boolean; reason?: TranslationKey }) | null
-
 /** 导出失败附带原因：预期的错误用对应文案作原因，其他错误用错误信息。 */
 const errorStatus = (key: TranslationKey, error: unknown): Status => ({
   key,
@@ -499,36 +503,6 @@ const errorStatus = (key: TranslationKey, error: unknown): Status => ({
   error: true,
 })
 
-const SettingCell = ({
-  label,
-  description,
-  status,
-  action,
-  className,
-}: {
-  label: string
-  description?: string
-  status: Status
-  action: ReactNode
-  className?: string
-}) => {
-  const t = useTranslate()
-  return (
-    <div className={clsx(styles.cell, styles.row, className)}>
-      <div className={styles.text}>
-        <div className={styles.label}>{label}</div>
-        {status || description ? (
-          <div className={clsx(styles.description, status?.error && styles.error)}>
-            {status
-              ? t(status.key, status.reason ? { message: t(status.reason) } : status.params)
-              : description}
-          </div>
-        ) : null}
-      </div>
-      {action}
-    </div>
-  )
-}
 
 /** 选文件后先选择追加或覆盖并二次确认；确认后才检查文件并执行导入，任何错误都提示导入失败。 */
 const useHistoryImport = () => {

@@ -509,3 +509,132 @@
     max-width: 100%;
   }
 }
+
+.usageSection {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  padding: 12px 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+
+  & + & {
+    box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+  }
+}
+
+.usageHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.usageHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.usageMetrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.usageMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.usageMetricValue {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usageMetricLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.usageList {
+  display: flex;
+  flex-direction: column;
+}
+
+.usageRow,
+.usageRowHeader {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 96px 56px 56px;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.usageRowHeader {
+  padding-bottom: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  box-shadow: inset 0 -1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.usageRow {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.usageRow + .usageRow {
+  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.usageTime,
+.usageTokens,
+.usageSearches {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.usageModel,
+.usageStatus {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usageEmpty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.usageNote {
+  margin: 10px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media not all and (min-width: 768px) {
+  .usageMetrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 12px;
+  }
+
+  .usageRow,
+  .usageRowHeader {
+    grid-template-columns: 84px minmax(0, 1fr) 84px 48px 48px;
+  }
+}

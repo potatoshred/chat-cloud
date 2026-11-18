@@ -8,6 +8,7 @@ import {
   type SessionSummary,
 } from './types.js'
 import { searchSessionsIn } from './searchText.js'
+import { collectUsage, summarizeUsage, type UsageReport } from './usage.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
 const DB_VERSION = 11
@@ -95,6 +96,19 @@ export const loadSession = async (id: string): Promise<Session | undefined> =>
 /** 本地全文搜索：全量读取会话后按共享规则匹配（个人聊天数据量可接受）。 */
 export const searchSessions = async (query: string): Promise<SessionSearchResult> =>
   searchSessionsIn(await (await getDB()).getAll('sessions'), query)
+
+/** 本地用量：全量读取会话后按共享规则统计最近 24 小时。 */
+export const loadUsage = async (): Promise<UsageReport> => {
+  const sessions = await (await getDB()).getAll('sessions')
+  const records = sessions.flatMap((session) =>
+    collectUsage(session).map((record) => ({
+      ...record,
+      sessionId: session.id,
+      sessionTitle: session.title ?? '',
+    }))
+  )
+  return summarizeUsage(records, Date.now())
+}
 
 export const saveSession = async (session: Session, files: StoredFile[] = []): Promise<void> => {
   const summary = storedSummary(session)

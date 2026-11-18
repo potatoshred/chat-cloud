@@ -6,6 +6,7 @@ export const MAX_API_BODY = 32 * 1024 * 1024
 const FILE_PATH = /^\/anthropic\/v1\/files\/[A-Za-z0-9_-]{1,256}$/
 const ROUTES = new Map([
   ['/models', 'GET'],
+  ['/user/balance', 'GET'],
   ['/anthropic/v1/messages', 'POST'],
   ['/anthropic/v1/files', 'POST'],
   ['/v1/tools/asr', 'POST'],

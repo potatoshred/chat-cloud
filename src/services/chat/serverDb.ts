@@ -12,6 +12,7 @@ import type {
   SessionSearchResult,
   SessionSummary,
 } from './types.js'
+import type { UsageReport } from './usage.js'
 
 type Version = { revision: string | null; generation: string }
 export type ServerState = {
@@ -98,6 +99,11 @@ export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
 export const searchSessions = async (query: string): Promise<SessionSearchResult> => {
   await queue
   return storageJson<SessionSearchResult>('search', 'POST', { query })
+}
+/** 最近 24 小时用量：同样先等在途写入，避免刚结束的回复统计不到。 */
+export const loadUsage = async (): Promise<UsageReport> => {
+  await queue
+  return storageJson<UsageReport>('usage')
 }
 export const loadSession = async (id: string): Promise<Session | undefined> => {
   await queue
