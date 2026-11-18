@@ -260,7 +260,8 @@ export const bindChatPersistence = () => {
     void refreshRemoteHistory()
   }
   window.addEventListener('focus', refresh)
-  const syncTimer = SERVER_API ? window.setInterval(refresh, 5000) : undefined
+  // Cross-device sync is also triggered by focus; the timer only covers idle tabs.
+  const syncTimer = SERVER_API ? window.setInterval(refresh, 30_000) : undefined
   // Persist partial replies regularly while the owning device receives the stream.
   const checkpoint = SERVER_API
     ? window.setInterval(() => {

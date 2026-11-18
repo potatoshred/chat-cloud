@@ -365,7 +365,7 @@ export const initServerDrafts = async () => {
     }
   }
   window.addEventListener('focus', refresh)
-  window.setInterval(refresh, 5000)
+  window.setInterval(refresh, 30_000)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       dirtyDrafts.forEach((id) => {

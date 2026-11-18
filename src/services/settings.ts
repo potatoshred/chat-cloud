@@ -235,5 +235,5 @@ export const initServerSettings = async () => {
   })
   window.setInterval(() => {
     void refresh()
-  }, 5000)
+  }, 30_000)
 }
