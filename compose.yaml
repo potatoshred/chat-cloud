@@ -45,7 +45,8 @@ services:
   # 在 Cloudflare 中配置公网主机名，服务地址填写 http://chat:8080。
   # cloudflared:
   #   image: cloudflare/cloudflared:latest
-  #   command: tunnel --no-autoupdate run
+  #   # --protocol http2 走 TCP：UDP 7844 被墙时避免隧道反复重连（默认 QUIC）。
+  #   command: tunnel --no-autoupdate --protocol http2 run
   #   environment:
   #     TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:?请在 .env 中设置 CLOUDFLARE_TUNNEL_TOKEN}"
   #   depends_on:

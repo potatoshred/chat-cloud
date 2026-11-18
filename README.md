@@ -176,6 +176,10 @@ server {
 然后打开 `https://chat.example.com`，使用应用的账号密码登录。
 `cloudflared` 通过容器网络连接 `chat:8080`。
 
+模板固定使用 `--protocol http2`：connector 与 Cloudflare 边缘走 TCP，适合 UDP 7844 被封、
+日志里出现 `failed to dial to edge with quic` 反复重连的网络。若服务器 UDP 通畅、想要 QUIC 的低延迟，
+把 `compose.yaml` 里的 `--protocol http2` 删掉（或改成 `--protocol auto`）后 `docker compose up -d cloudflared`。
+
 ## 登录与访问保护
 
 登录密码在服务器端通过带随机盐的 scrypt 哈希验证。
