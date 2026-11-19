@@ -11,7 +11,6 @@ const makeEnv = (db, extra = {}) => ({
   DB: db,
   AUTH_USERNAME: 'admin',
   AUTH_PASSWORD: PASSWORD,
-  SESSION_SECRET: 'test-secret',
   DEEPSEEK_API_KEY: 'server-key',
   ASSETS: { fetch: async () => new Response('asset') },
   ...extra,

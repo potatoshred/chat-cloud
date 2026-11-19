@@ -66,7 +66,9 @@ const timingSafeEqualText = (left, right) => {
   return diff === 0
 }
 
-const secretOf = (env) => env.SESSION_SECRET || `derived:${env.AUTH_PASSWORD}`
+// 不额外要求 SESSION_SECRET：直接由登录口令派生签名密钥。
+// 代价是改口令会让所有设备掉线；只要口令足够长，签名强度与单独密钥等价。
+const secretOf = (env) => `session:${env.AUTH_PASSWORD}`
 
 /** 会话 Cookie：exp 签名，无服务端状态，适合多 isolate。 */
 const issueCookie = async (env, ttl = SESSION_TTL) => {

@@ -2,6 +2,4 @@
 AUTH_USERNAME=admin
 # 至少 14 位
 AUTH_PASSWORD=
-# openssl rand -hex 32
-SESSION_SECRET=
 DEEPSEEK_API_KEY=
