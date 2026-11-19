@@ -33,11 +33,16 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo)
 
-注意三点：
+点击后的步骤：
 
-1. 按钮只认**默认分支**（`main`）：这份实现合进 `main` 之后按钮才能用；
-2. 构建命令要改成 **`pnpm cf:build`**（默认的 `pnpm build` 是静态版，不会带 `CHAT_EDGE`）；
-3. 部署命令用仓库里的 `deploy` 脚本：先 `wrangler d1 migrations apply DB`，再 `wrangler deploy`。
+1. 授权 GitHub，Cloudflare 把仓库复制到你自己的账号；
+2. 确认 Worker 名称、D1 名称，按提示填 `AUTH_USERNAME`、`AUTH_PASSWORD`、`SESSION_SECRET`、`DEEPSEEK_API_KEY`（来自 `.dev.vars.example`）；
+3. **把 Build command 改成 `pnpm cf:build`**（默认填入的 `pnpm build` 是静态版，不带 `CHAT_EDGE`）；
+4. Deploy command 保持仓库里的 `deploy` 脚本：自动建表（`d1 migrations apply`）再部署。
+
+之后每次 push 到 main，Workers Builds 会自动重新构建并部署；构建失败时线上保持上一个版本。
+
+注意：按钮只认**默认分支**（`main`）。`cf:build` 还会把 `cloudflare/_headers` 复制进 `dist`，用来给 `index.html` 加 `no-store`、给带哈希的静态文件加长缓存。
 
 ## 部署
 

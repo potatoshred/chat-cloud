@@ -1,0 +1,7 @@
+# Cloudflare Workers 部署（Deploy to Cloudflare 按钮会读取本文件并提示填写）
+AUTH_USERNAME=admin
+# 至少 14 位
+AUTH_PASSWORD=
+# openssl rand -hex 32
+SESSION_SECRET=
+DEEPSEEK_API_KEY=
