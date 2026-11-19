@@ -963,7 +963,18 @@ export default {
       return new Response('Not found', { status: 404 })
     } catch (error) {
       if (error instanceof HttpError) return json({ error: { message: error.message } }, error.status)
-      console.error(error)
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(message)
+      // 建表没跑时 D1 会报 no such table；直接告诉用户去执行迁移，比“内部错误”有用。
+      if (/no such table/i.test(message)) {
+        return json(
+          { error: { message: '数据库尚未初始化：请执行 cloudflare/schema.sql 或 wrangler d1 migrations apply DB' } },
+          503
+        )
+      }
+      if (/no such column/i.test(message)) {
+        return json({ error: { message: '数据库结构过旧：请执行最新的 D1 迁移' } }, 503)
+      }
       return json({ error: { message: '服务器内部错误' } }, 500)
     }
   },

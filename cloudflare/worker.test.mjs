@@ -340,6 +340,15 @@ test('replace import swaps data and rebuilds the search index', async () => {
   assert.equal(found.hits[0].sessionId, 's9')
 })
 
+test('missing tables report a migration hint', async () => {
+  const db = createD1()
+  const env = makeEnv(db)
+  const cookie = await login(env)
+  const response = await call(env, '/data/state', { cookie })
+  assert.equal(response.status, 503)
+  assert.match((await response.json()).error.message, /尚未初始化/)
+})
+
 test('api proxy injects the server key and forwards requests', async (t) => {
   const received = []
   const upstream = createServer((request, response) => {
