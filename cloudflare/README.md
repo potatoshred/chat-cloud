@@ -44,6 +44,26 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 注意：按钮只认**默认分支**（`main`）。`cf:build` 还会把 `cloudflare/_headers` 复制进 `dist`，用来给 `index.html` 加 `no-store`、给带哈希的静态文件加长缓存。
 
+## 变量与密钥
+
+`wrangler.jsonc` 里已经放好位置：
+
+```jsonc
+"vars": {
+  "AUTH_USERNAME": "admin"        // 不敏感，随代码走；改成你自己的用户名
+},
+"secrets": {
+  "required": ["AUTH_PASSWORD", "DEEPSEEK_API_KEY"]
+}
+```
+
+- **AUTH_USERNAME** 是普通变量，改配置文件即可，重新部署不会丢；
+- **AUTH_PASSWORD / DEEPSEEK_API_KEY** 必须是 Secret：Dashboard → Worker → Settings → Variables and Secrets → 添加 → **类型选「密钥」**；
+- 缺少任一 Secret 时，`wrangler deploy` 会直接报错并列出缺的名字，不会静默部署出一个登不进去的版本；
+- 不要把密码/API Key 填进 `vars`，那会明文写进仓库。
+
+如果之前把 `AUTH_USERNAME` 加成过 Secret，请先删掉它，否则会和配置里的同名变量冲突。
+
 ## 部署命令必须指向建库脚本
 
 Workers Builds 项目在创建时会**固化**「部署命令」，之后仓库里的 `package.json` 改动不会同步过去。如果日志里出现：

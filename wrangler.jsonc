@@ -3,6 +3,15 @@
   "name": "chat-demo",
   "main": "cloudflare/worker.mjs",
   "compatibility_date": "2026-11-01",
+  // 登录用户名不敏感，随代码走；改这里即可。
+  "vars": {
+    "AUTH_USERNAME": "admin"
+  },
+  // 这两个必须用 Secret（Settings → Variables and Secrets → 类型选「密钥」）。
+  // 缺任意一个时 `wrangler deploy` 会直接列出缺的名字。
+  "secrets": {
+    "required": ["AUTH_PASSWORD", "DEEPSEEK_API_KEY"]
+  },
   // 前端产物：先 CHAT_SERVER_API=true CHAT_EDGE=true pnpm build，再把 dist 作为静态资源。
   "assets": {
     "directory": "./dist",
