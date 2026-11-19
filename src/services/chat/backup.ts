@@ -44,7 +44,12 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
  * 通过后从 ZIP 流式写入暂存，成功才提交。返回实际新增的会话数。
  * append 模式跳过同 ID 会话、保留现有草稿与原件；replace 模式替换全部历史。
  */
-export type ImportResult = { count: number; skippedFiles: string[]; skippedSessions: string[] }
+export type ImportResult = {
+  count: number
+  skippedFiles: string[]
+  skippedSessions: string[]
+  skippedExisting: string[]
+}
 
 export const importHistory = (
   file: File,
@@ -54,9 +59,17 @@ export const importHistory = (
   enqueueBackup(async () => {
     const { checkArchiveFormat, importArchive, takeSkippedFiles } = await import('./history/importArchive.js')
     await checkArchiveFormat(file)
-    const count = await replaceHistory(() => importArchive(file, onProgress), mode)
+    const count = await replaceHistory(
+      () => importArchive(file, onProgress, { skipExisting: mode === 'append' }),
+      mode
+    )
     const skipped = takeSkippedFiles()
-    return { count, skippedFiles: skipped.files, skippedSessions: skipped.sessions }
+    return {
+      count,
+      skippedFiles: skipped.files,
+      skippedSessions: skipped.sessions,
+      skippedExisting: skipped.existing,
+    }
   })
 
 /** 确认删除后调用：以空历史原子替换全部本地会话与附件，保留 API Key 和其他设置。 */

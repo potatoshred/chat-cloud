@@ -51,11 +51,17 @@ const EDGE_FILE_BUDGET = 100 * 1024 * 1024
 /** 跳过的附件与会话：收尾时由界面展示名字列表。 */
 let skippedNames: string[] = []
 let skippedSessionNames: string[] = []
+let skippedExistingNames: string[] = []
 let importedFileBytes = 0
 export const takeSkippedFiles = () => {
-  const result = { files: skippedNames, sessions: skippedSessionNames }
+  const result = {
+    files: skippedNames,
+    sessions: skippedSessionNames,
+    existing: skippedExistingNames,
+  }
   skippedNames = []
   skippedSessionNames = []
+  skippedExistingNames = []
   return result
 }
 
@@ -104,7 +110,8 @@ export const checkArchiveFormat = async (file: File): Promise<void> => {
  */
 export const importArchive = async (
   file: File,
-  onProgress?: (progress: ImportProgress) => void
+  onProgress?: (progress: ImportProgress) => void,
+  options: { skipExisting?: boolean } = {}
 ): Promise<void> => {
   if (!(await isZipFile(file))) {
     fail('backupUnrecognized')
@@ -116,7 +123,13 @@ export const importArchive = async (
   importedFileBytes = 0
   skippedNames = []
   skippedSessionNames = []
+  skippedExistingNames = []
   const skippedSessionIds = new Set<string>()
+  const skippedExistingIds = new Set<string>()
+  // 追加模式下已存在的会话不用再上传/暂存：省掉写入、附件流量和额度。
+  const existingIds = options.skipExisting
+    ? new Set((await db.loadSessionSummaries()).map((summary) => summary.id))
+    : null
   let stagedSessions = 0
   let stagedFiles = 0
   const report = () => onProgress?.({ sessions: stagedSessions, files: stagedFiles })
@@ -207,7 +220,12 @@ export const importArchive = async (
         }
         const json = JSON.stringify(local.session)
         const bytes = utf8Length(json)
-        if (EDGE_API && bytes > 1_900_000) {
+        if (existingIds?.has(sessionId)) {
+          skippedExistingIds.add(sessionId)
+          if (skippedExistingNames.length < 20) {
+            skippedExistingNames.push(local.session.title || sessionId)
+          }
+        } else if (EDGE_API && bytes > 1_900_000) {
           // 单个会话超过 D1 单行上限：跳过它，其余会话继续导入，并在结束时列出名字。
           skippedSessionIds.add(sessionId)
           if (skippedSessionNames.length < 20) {
@@ -247,7 +265,7 @@ export const importArchive = async (
   }
   // index 只列出成功写出的会话，与会话文件一一对应。
   const listed = new Set(index?.map((entry) => entry.id))
-  const covered = new Set([...imported, ...skippedSessionIds])
+  const covered = new Set([...imported, ...skippedSessionIds, ...skippedExistingIds])
   if (
     !index ||
     listed.size !== index.length ||

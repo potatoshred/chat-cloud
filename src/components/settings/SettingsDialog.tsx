@@ -514,6 +514,7 @@ const useHistoryImport = () => {
   const [progress, setProgress] = useState<{ sessions: number; files: number } | null>(null)
   const [skippedFiles, setSkippedFiles] = useState<string[]>([])
   const [skippedSessions, setSkippedSessions] = useState<string[]>([])
+  const [skippedExisting, setSkippedExisting] = useState<string[]>([])
   const [reason, setReason] = useState<string | null>(null)
   const importing = useRef(false)
 
@@ -527,6 +528,7 @@ const useHistoryImport = () => {
     setStatus(null)
     setSkippedFiles([])
     setSkippedSessions([])
+    setSkippedExisting([])
     setReason(null)
     setProgress({ sessions: 0, files: 0 })
     try {
@@ -537,6 +539,7 @@ const useHistoryImport = () => {
       })
       setSkippedFiles(result.skippedFiles)
       setSkippedSessions(result.skippedSessions)
+      setSkippedExisting(result.skippedExisting)
     } catch (error) {
       setStatus({ key: 'historyImportFailed', error: true })
       setReason(
@@ -571,6 +574,7 @@ const useHistoryImport = () => {
     progress,
     skippedFiles,
     skippedSessions,
+    skippedExisting,
     reason,
     select,
     cancel,
@@ -632,6 +636,18 @@ const ImportHistory = ({
               files: historyImport.progress.files,
             })}
           </span>
+        </div>
+      ) : null}
+      {historyImport.skippedExisting.length > 0 ? (
+        <div className={styles.importSkipped}>
+          <div>
+            {t('historyImportSkippedExistingTitle', { count: historyImport.skippedExisting.length })}
+          </div>
+          <ul className={styles.importSkippedList}>
+            {historyImport.skippedExisting.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
         </div>
       ) : null}
       {historyImport.skippedSessions.length > 0 ? (
