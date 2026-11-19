@@ -498,11 +498,23 @@ async function handleData(request, env, url) {
     const body = JSON.stringify(session)
     if (body.length > SESSION_LIMIT) fail(413, '会话过大：单个会话上限约 1.8MB。')
     const revision = crypto.randomUUID()
-    await db.batch([
-      db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?)').bind(id, body, revision),
-      ...replaceSearchDocs(db, id, session),
-      bumpVersion(db),
-    ])
+    const statements = [db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?)').bind(id, body, revision)]
+    if (method === 'PATCH') {
+      // 改名只动标题文档，避免整会话重建索引。
+      statements.push(db.prepare("DELETE FROM search_docs WHERE session_id=? AND role='title'").bind(id))
+      if (session.title.trim()) {
+        statements.push(
+          db
+            .prepare('INSERT INTO search_docs VALUES (?,?,?,?,?)')
+            .bind(id, '', 'title', session.title, session.updatedAt ?? 0)
+        )
+      }
+    } else if (!session.messages.some((m) => m.role === 'assistant' && (m.status === 'pending' || m.status === 'streaming'))) {
+      // 流式过程中每 10 秒就要保存一次；全量重建索引会把 D1 写额度瞬间打满。
+      statements.push(...replaceSearchDocs(db, id, session))
+    }
+    statements.push(bumpVersion(db))
+    await db.batch(statements)
     return json({ revision, generation: await getMeta(db, 'generation') })
   }
 

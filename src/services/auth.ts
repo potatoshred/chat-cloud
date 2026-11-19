@@ -1,3 +1,5 @@
+import { EDGE_API } from './api/config.js'
+
 /** Recheck the server session when returning to an existing chat tab. */
 export const bindAuthSession = () => {
   let active = true
@@ -21,12 +23,15 @@ export const bindAuthSession = () => {
   }
   const refresh = () => { void check() }
   refresh()
-  const timer = window.setInterval(refresh, 30_000)
+  // 免费版不轮询：只在回到页面时检查登录态。
+  const timer = EDGE_API ? undefined : window.setInterval(refresh, 30_000)
   window.addEventListener('focus', refresh)
   document.addEventListener('visibilitychange', refresh)
   return () => {
     active = false
-    window.clearInterval(timer)
+    if (timer !== undefined) {
+      window.clearInterval(timer)
+    }
     window.removeEventListener('focus', refresh)
     document.removeEventListener('visibilitychange', refresh)
   }

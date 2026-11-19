@@ -4,6 +4,7 @@ import { classifyApiError } from '../../services/api/errors.js'
 import type { UserBalance } from '../../services/api/types.js'
 import { loadUsage } from '../../services/chat/db.js'
 import type { UsageReport } from '../../services/chat/usage.js'
+import { EDGE_API } from '../../services/api/config.js'
 import { useSettings } from '../../services/settings.js'
 import { useTranslate } from '../../i18n/index.js'
 
@@ -43,9 +44,10 @@ export const useUsage = () => {
     }
     busy.current = true
     setLoading(true)
+    // 免费版只保留余额：24 小时用量需要扫描全部消息，D1 读额度不划算。
     const [balanceResult, usageResult] = await Promise.allSettled([
       fetchBalance(apiKey ?? ''),
-      loadUsage(),
+      EDGE_API ? Promise.resolve(null) : loadUsage(),
     ])
     if (alive.current) {
       if (balanceResult.status === 'fulfilled') {
@@ -54,7 +56,9 @@ export const useUsage = () => {
       } else {
         setBalanceCause(balanceResult.reason)
       }
-      if (usageResult.status === 'fulfilled') {
+      if (EDGE_API) {
+        setReport(null)
+      } else if (usageResult.status === 'fulfilled') {
         setReport(usageResult.value)
         setUsageCause(null)
       } else {

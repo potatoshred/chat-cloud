@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslate } from '../../i18n/index.js'
+import { EDGE_API } from '../../services/api/config.js'
 import { useSettings } from '../../services/settings.js'
 import { formatDateTime } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
@@ -84,8 +85,10 @@ export const UsageSection = () => {
           </Button>
         }
       />
-      <div className={styles.usageSection}>
-        <div className={styles.usageHeading}>{t('settingsUsageWindow')}</div>
+      {EDGE_API ? null : (
+        <>
+          <div className={styles.usageSection}>
+            <div className={styles.usageHeading}>{t('settingsUsageWindow')}</div>
         <div className={styles.usageMetrics}>
           {metrics.map((metric) => (
             <div key={metric.key} className={styles.usageMetric}>
@@ -182,6 +185,8 @@ export const UsageSection = () => {
         )}
         <p className={styles.usageNote}>{t('settingsUsageNote')}</p>
       </div>
+        </>
+      )}
     </>
   )
 }

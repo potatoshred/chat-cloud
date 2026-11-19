@@ -247,6 +247,37 @@ test('search and 24h usage read the written index', async () => {
   assert.equal(usage.entries[0].firstTokenMs, 800)
 })
 
+test('streaming replies are indexed only once they finish', async () => {
+  const { env } = fixture()
+  const cookie = await login(env)
+  const generation = (await (await call(env, '/data/state', { cookie })).json()).generation
+
+  const streamingSession = sessionOf('s2', '流式会话')
+  streamingSession.messages[1].status = 'streaming'
+  await call(env, '/data/sessions/s2', {
+    method: 'PUT',
+    cookie,
+    body: { generation, revision: null, session: streamingSession },
+  })
+  const during = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '回答内容' } })).json()
+  assert.equal(during.total, 0)
+
+  const finished = await (await call(env, '/data/sessions/s2', { cookie })).json()
+  streamingSession.messages[1].status = 'done'
+  assert.equal(
+    (
+      await call(env, '/data/sessions/s2', {
+        method: 'PUT',
+        cookie,
+        body: { generation, revision: finished.revision, session: streamingSession },
+      })
+    ).status,
+    200
+  )
+  const afterDone = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '回答内容' } })).json()
+  assert.equal(afterDone.total, 1)
+})
+
 test('import staging commits in append mode', async () => {
   const { env } = fixture()
   const cookie = await login(env)
