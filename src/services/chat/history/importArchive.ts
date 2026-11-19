@@ -3,6 +3,7 @@ import type { StoredFile } from '../localDb.js'
 import type { Session } from '../types.js'
 import { BackupError, fail } from './errors.js'
 import { EDGE_API } from '../../api/config.js'
+import { compressImage, isCompressibleImage } from '../../attachments.js'
 import type { SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, USER_PATH, parseSessionPath, sessionFilesDir } from './paths.js'
 import { checkManifest, readSessionFile, readSessionIndex } from './schema.js'
@@ -44,8 +45,12 @@ const imageType = (bytes: Uint8Array): string => {
   return ''
 }
 
+/** 免费版单个归档的附件预算：暂存与最终各存一份，100MB 对应峰值 200MB。 */
+const EDGE_FILE_BUDGET = 100 * 1024 * 1024
+
 /** 免费版跳过的大附件数量，由导入收尾时提示用户。 */
 let skippedFiles = 0
+let importedFileBytes = 0
 export const takeSkippedFiles = () => {
   const count = skippedFiles
   skippedFiles = 0
@@ -97,6 +102,8 @@ export const importArchive = async (file: File): Promise<void> => {
   const images = new Map<string, string>()
   /** 已保存的原件：文件 ID → MIME。同一图片出现在多个会话目录时只保存一次。 */
   const stored = new Map<string, string>()
+  importedFileBytes = 0
+  skippedFiles = 0
   let manifest = false
   let index: SessionIndexEntry[] | undefined
   let currentSessionId: string | undefined
@@ -136,13 +143,22 @@ export const importArchive = async (file: File): Promise<void> => {
     const data = await readEntry(entry)
     const type = imageType(new Uint8Array(await data.slice(0, 16).arrayBuffer()))
     stored.set(id, type)
-    // D1 单行上限 2MB：超出的原图跳过，会话本身照常导入。
-    if (EDGE_API && data.size > 1_900_000) {
+    let blob = data
+    // 免费版：先压缩再入库，尽量不丢图片；只有压完仍超 2MB 或总预算用完才跳过。
+    if (EDGE_API && isCompressibleImage(type) && blob.size > 500 * 1024) {
+      const name = entry.path.split('/').pop() ?? id
+      blob = await compressImage(new File([blob], name, { type }))
+    }
+    if (
+      EDGE_API &&
+      (blob.size > 1_900_000 || importedFileBytes + blob.size > EDGE_FILE_BUDGET)
+    ) {
       skippedFiles += 1
       return
     }
-    pendingFiles.push({ id, blob: new Blob([data], { type }) })
-    pendingFileBytes += data.size
+    importedFileBytes += blob.size
+    pendingFiles.push({ id, blob: new Blob([blob], { type: blob.type || type }) })
+    pendingFileBytes += blob.size
     if (pendingFiles.length >= BATCH_COUNT || pendingFileBytes >= BATCH_BYTES) {
       await flushFiles()
     }
