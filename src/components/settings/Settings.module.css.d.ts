@@ -41,6 +41,10 @@ declare const styles: {
   readonly "importModeDescription": string;
   readonly "deleteConfirm": string;
   readonly "deleteActions": string;
+  readonly "importProgress": string;
+  readonly "importProgressBar": string;
+  readonly "importSkipped": string;
+  readonly "importSkippedList": string;
   readonly "usageSection": string;
   readonly "usageHeading": string;
   readonly "usageHint": string;

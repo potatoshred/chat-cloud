@@ -191,7 +191,9 @@ export const en = {
     : 'By default new chats are appended and existing data is kept; replacing all local chats and attachments is also available. Supports ZIP files exported from DeepSeek.',
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
-  historyImportSkippedFiles: '{count} attachments could not be imported (still over 2 MB after compression, or over the per-import budget).',
+  historyImportProgress: 'Importing: {sessions} chats, {files} attachments',
+  historyImportSkippedTitle: 'Skipped {count} attachments:',
+  historyImportFailedReason: 'Reason: {reason}',
   historyImportFailed:
     'File import failed. The file format may be invalid, or the ZIP file may use an older chat export format. Please export your chat history from DeepSeek again and retry the import.',
   historyExportFailed: 'Export failed: {message}',

@@ -506,10 +506,14 @@ const errorStatus = (key: TranslationKey, error: unknown): Status => ({
 
 /** 选文件后先选择追加或覆盖并二次确认；确认后才检查文件并执行导入，任何错误都提示导入失败。 */
 const useHistoryImport = () => {
+  const t = useTranslate()
   const [file, setFile] = useState<File | null>(null)
   const [mode, setMode] = useState<ImportMode>('append')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<Status>(null)
+  const [progress, setProgress] = useState<{ sessions: number; files: number } | null>(null)
+  const [skipped, setSkipped] = useState<string[]>([])
+  const [reason, setReason] = useState<string | null>(null)
   const importing = useRef(false)
 
   const confirm = async () => {
@@ -520,13 +524,28 @@ const useHistoryImport = () => {
     setFile(null)
     setBusy(true)
     setStatus(null)
+    setSkipped([])
+    setReason(null)
+    setProgress({ sessions: 0, files: 0 })
     try {
-      const count = await importHistory(file, mode)
-      setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
-    } catch {
+      const result = await importHistory(file, mode, setProgress)
+      setStatus({
+        key: result.count === 1 ? 'historyImportedOne' : 'historyImported',
+        params: { count: result.count },
+      })
+      setSkipped(result.skipped)
+    } catch (error) {
       setStatus({ key: 'historyImportFailed', error: true })
+      setReason(
+        error instanceof BackupError
+          ? t(error.key)
+          : error instanceof Error
+            ? error.message
+            : null
+      )
     } finally {
       importing.current = false
+      setProgress(null)
       setBusy(false)
     }
   }
@@ -540,7 +559,7 @@ const useHistoryImport = () => {
     setFile(null)
   }
 
-  return { file, mode, setMode, busy, status, select, cancel, confirm }
+  return { file, mode, setMode, busy, status, progress, skipped, reason, select, cancel, confirm }
 }
 
 /** 导入历史：默认追加新对话，可在确认时选择覆盖。 */
@@ -555,11 +574,12 @@ const ImportHistory = ({
   const inputRef = useRef<HTMLInputElement>(null)
 
   return (
-    <SettingCell
-      label={t('historyImport')}
-      description={t('historyImportDescription')}
-      status={historyImport.status}
-      action={
+    <>
+      <SettingCell
+        label={t('historyImport')}
+        description={t('historyImportDescription')}
+        status={historyImport.status}
+        action={
         <>
           <Button
             variant="outlined"
@@ -585,8 +605,35 @@ const ImportHistory = ({
             }}
           />
         </>
-      }
-    />
+        }
+      />
+      {historyImport.busy && historyImport.progress ? (
+        <div className={styles.importProgress} role="status" aria-live="polite">
+          <div className={styles.importProgressBar} />
+          <span>
+            {t('historyImportProgress', {
+              sessions: historyImport.progress.sessions,
+              files: historyImport.progress.files,
+            })}
+          </span>
+        </div>
+      ) : null}
+      {historyImport.skipped.length > 0 ? (
+        <div className={styles.importSkipped}>
+          <div>{t('historyImportSkippedTitle', { count: historyImport.skipped.length })}</div>
+          <ul className={styles.importSkippedList}>
+            {historyImport.skipped.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {historyImport.reason ? (
+        <div className={styles.error}>
+          {t('historyImportFailedReason', { reason: historyImport.reason })}
+        </div>
+      ) : null}
+    </>
   )
 }
 

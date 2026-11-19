@@ -1,5 +1,3 @@
-import { translate } from '../../i18n/index.js'
-import { showToast } from '../../components/base/toastState.js'
 import { formatDate } from '../../utils/format.js'
 import * as db from './db.js'
 import { replaceHistory, useChatStore } from './store.js'
@@ -46,16 +44,18 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
  * 通过后从 ZIP 流式写入暂存，成功才提交。返回实际新增的会话数。
  * append 模式跳过同 ID 会话、保留现有草稿与原件；replace 模式替换全部历史。
  */
-export const importHistory = (file: File, mode: ImportMode): Promise<number> =>
+export type ImportResult = { count: number; skipped: string[] }
+
+export const importHistory = (
+  file: File,
+  mode: ImportMode,
+  onProgress?: (progress: { sessions: number; files: number }) => void
+): Promise<ImportResult> =>
   enqueueBackup(async () => {
     const { checkArchiveFormat, importArchive, takeSkippedFiles } = await import('./history/importArchive.js')
     await checkArchiveFormat(file)
-    const imported = await replaceHistory(() => importArchive(file), mode)
-    const skipped = takeSkippedFiles()
-    if (skipped > 0) {
-      showToast(translate('historyImportSkippedFiles', { count: skipped }))
-    }
-    return imported
+    const count = await replaceHistory(() => importArchive(file, onProgress), mode)
+    return { count, skipped: takeSkippedFiles().names }
   })
 
 /** 确认删除后调用：以空历史原子替换全部本地会话与附件，保留 API Key 和其他设置。 */

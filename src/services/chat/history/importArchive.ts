@@ -48,14 +48,19 @@ const imageType = (bytes: Uint8Array): string => {
 /** 免费版单个归档的附件预算：暂存与最终各存一份，100MB 对应峰值 200MB。 */
 const EDGE_FILE_BUDGET = 100 * 1024 * 1024
 
-/** 免费版跳过的大附件数量，由导入收尾时提示用户。 */
+/** 免费版跳过的附件：收尾时由界面展示文件名列表。 */
 let skippedFiles = 0
+let skippedNames: string[] = []
 let importedFileBytes = 0
 export const takeSkippedFiles = () => {
-  const count = skippedFiles
+  const result = { count: skippedFiles, names: skippedNames }
   skippedFiles = 0
-  return count
+  skippedNames = []
+  return result
 }
+
+/** 导入进度：已写入暂存的会话数与附件数。 */
+export type ImportProgress = { sessions: number; files: number }
 
 const readJson = async (entry: ArchiveEntry): Promise<unknown> => {
   const text = await (await readEntry(entry)).text()
@@ -94,7 +99,10 @@ export const checkArchiveFormat = async (file: File): Promise<void> => {
  * 会话读完立即暂存，只保留图片路径映射；图片全部读完后逐会话回填 MIME，不改变图片身份。
  * 写入导入暂存存储；调用方负责先清空暂存，成功后替换正式数据，失败时清理暂存。
  */
-export const importArchive = async (file: File): Promise<void> => {
+export const importArchive = async (
+  file: File,
+  onProgress?: (progress: ImportProgress) => void
+): Promise<void> => {
   if (!(await isZipFile(file))) {
     fail('backupUnrecognized')
   }
@@ -104,6 +112,10 @@ export const importArchive = async (file: File): Promise<void> => {
   const stored = new Map<string, string>()
   importedFileBytes = 0
   skippedFiles = 0
+  skippedNames = []
+  let stagedSessions = 0
+  let stagedFiles = 0
+  const report = () => onProgress?.({ sessions: stagedSessions, files: stagedFiles })
   let manifest = false
   let index: SessionIndexEntry[] | undefined
   let currentSessionId: string | undefined
@@ -123,16 +135,20 @@ export const importArchive = async (file: File): Promise<void> => {
       return
     }
     await db.addStagingSessions(pendingSessions)
+    stagedSessions += pendingSessions.length
     pendingSessions = []
     pendingSessionBytes = 0
+    report()
   }
   const flushFiles = async () => {
     if (pendingFiles.length === 0) {
       return
     }
     await db.saveStagingFiles(pendingFiles)
+    stagedFiles += pendingFiles.length
     pendingFiles = []
     pendingFileBytes = 0
+    report()
   }
 
   const saveImage = async (entry: ArchiveEntry, id: string) => {
@@ -154,6 +170,9 @@ export const importArchive = async (file: File): Promise<void> => {
       (blob.size > 1_900_000 || importedFileBytes + blob.size > EDGE_FILE_BUDGET)
     ) {
       skippedFiles += 1
+      if (skippedNames.length < 20) {
+        skippedNames.push(entry.path.split('/').pop() ?? id)
+      }
       return
     }
     importedFileBytes += blob.size
