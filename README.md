@@ -3,6 +3,11 @@
 基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 的个人聊天应用，
 提供独立登录页、Docker 部署和服务端数据存储。同一账号可在电脑、手机等设备上访问相同的聊天记录。
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo)
+
+> 不想自己跑服务器？点上面的按钮可以部署到 Cloudflare Workers + D1 的免费额度内（无需信用卡），
+> 详见 [cloudflare/README.md](cloudflare/README.md)。
+
 - 在 `.env` 中配置登录账号、密码和 DeepSeek API Key。
 - 聊天记录、附件原件、草稿及设置保存在服务端 SQLite，通过 Docker 数据卷持久化。
 - 浏览器通过服务端代理调用 DeepSeek API，API Key 保留在服务器端。
@@ -45,6 +50,25 @@ ssh -L 8090:127.0.0.1:8090 your-user@your-server
 ```
 
 建立隧道后，在自己的电脑打开 <http://localhost:8090>。
+
+## 一键部署到 Cloudflare（免费）
+
+点顶部的 **Deploy to Cloudflare** 按钮，或直接打开
+<https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo>。
+
+点击后 Cloudflare 会把仓库复制到你的账号、自动创建 D1、构建并部署，最后给出
+`https://<名字>.<子域>.workers.dev` 地址。需要改一处：**Build command 填 `pnpm cf:build`**
+（默认填的是静态版 `pnpm build`）。
+
+免费版与容器版的差异：
+
+- 附件单张 ≤0.5MB（浏览器内多轮压缩后才上传）；
+- 不轮询同步：只在打开页面、回到页面、回复结束后同步；
+- 用量页只显示余额，不显示 24 小时日志；
+- 单库 500MB、10 万请求/天、10ms CPU/请求，额度用尽当天会直接报错。
+
+`workers.dev` 在部分网络不可达，需要稳定访问时把自己的域名挂到同一个 Worker 上即可。
+完整步骤见 [cloudflare/README.md](cloudflare/README.md)。
 
 ## 配置
 
