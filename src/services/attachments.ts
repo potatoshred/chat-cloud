@@ -48,7 +48,8 @@ export const isCompressibleImage = (mimeType: string) => COMPRESSIBLE.has(mimeTy
 const drawToBlob = async (
   bitmap: ImageBitmap,
   type: string,
-  scale: number
+  scale: number,
+  quality: number
 ): Promise<Blob | null> => {
   const width = Math.max(1, Math.round(bitmap.width * scale))
   const height = Math.max(1, Math.round(bitmap.height * scale))
@@ -62,10 +63,10 @@ const drawToBlob = async (
   }
   context.drawImage(bitmap, 0, 0, width, height)
   if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
-    return canvas.convertToBlob({ type, quality: 0.85 })
+    return canvas.convertToBlob({ type, quality })
   }
   return new Promise((resolve) => {
-    ;(canvas as HTMLCanvasElement).toBlob((blob) => resolve(blob), type, 0.85)
+    ;(canvas as HTMLCanvasElement).toBlob((blob) => resolve(blob), type, quality)
   })
 }
 
@@ -84,20 +85,24 @@ export const compressImage = async (file: File): Promise<File> => {
     return file
   }
   try {
+    // 多轮压缩：每轮先降质量（0.9 → 0.75 → 0.6），仍超标就缩小尺寸再来一轮，直到不超过 500KB。
     let scale = Math.min(1, EDGE_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height))
     let best = file
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const blob = await drawToBlob(bitmap, file.type, scale)
-      if (blob && blob.size < best.size) {
-        best = new File([blob], file.name, { type: file.type, lastModified: file.lastModified })
+    const qualities = [0.9, 0.75, 0.6]
+    for (let round = 0; round < 6 && scale >= 0.08; round += 1) {
+      for (const quality of qualities) {
+        const blob = await drawToBlob(bitmap, file.type, scale, quality)
+        if (!blob) {
+          continue
+        }
+        if (blob.size < best.size) {
+          best = new File([blob], file.name, { type: file.type, lastModified: file.lastModified })
+        }
+        if (blob.size <= EDGE_MAX_BYTES) {
+          return best
+        }
       }
-      if (blob && blob.size <= EDGE_MAX_BYTES) {
-        break
-      }
-      scale *= 0.75
-      if (scale < 0.1) {
-        break
-      }
+      scale *= 0.7
     }
     return best
   } finally {
