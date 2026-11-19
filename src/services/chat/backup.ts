@@ -1,3 +1,5 @@
+import { translate } from '../../i18n/index.js'
+import { showToast } from '../../components/base/toastState.js'
 import { formatDate } from '../../utils/format.js'
 import * as db from './db.js'
 import { replaceHistory, useChatStore } from './store.js'
@@ -46,9 +48,14 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
  */
 export const importHistory = (file: File, mode: ImportMode): Promise<number> =>
   enqueueBackup(async () => {
-    const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
+    const { checkArchiveFormat, importArchive, takeSkippedFiles } = await import('./history/importArchive.js')
     await checkArchiveFormat(file)
-    return replaceHistory(() => importArchive(file), mode)
+    const imported = await replaceHistory(() => importArchive(file), mode)
+    const skipped = takeSkippedFiles()
+    if (skipped > 0) {
+      showToast(translate('historyImportSkippedFiles', { count: skipped }))
+    }
+    return imported
   })
 
 /** 确认删除后调用：以空历史原子替换全部本地会话与附件，保留 API Key 和其他设置。 */

@@ -649,6 +649,7 @@ async function handleImports(request, db, parts, method) {
     await db.batch([
       db.prepare('DELETE FROM staged_sessions WHERE owner=?').bind(id),
       db.prepare('DELETE FROM staged_files WHERE owner=?').bind(id),
+      db.prepare('DELETE FROM staged_docs WHERE owner=?').bind(id),
       db.prepare('DELETE FROM imports WHERE id=?').bind(id),
     ])
     return json({ ok: true })
@@ -662,44 +663,68 @@ async function handleImports(request, db, parts, method) {
     if (mode !== 'append' && mode !== 'replace') fail(400, '导入模式无效。')
     if (staging.version !== (await getMeta(db, 'version'))) conflict()
 
-    const sessions = await all(db, 'SELECT id, json FROM staged_sessions WHERE owner=?', id)
-    let importedCount = 0
-    let skippedCount = 0
+    const total = (await first(db, 'SELECT COUNT(*) AS n FROM staged_sessions WHERE owner=?', id)).n
+    const skippedCount =
+      mode === 'append'
+        ? (
+            await first(
+              db,
+              `SELECT COUNT(*) AS n FROM staged_sessions s
+                WHERE s.owner=? AND EXISTS (SELECT 1 FROM sessions t WHERE t.id=s.id)`,
+              id
+            )
+          ).n
+        : 0
+    const importedCount = total - skippedCount
     const statements = []
+
     if (mode === 'append') {
-      const existing = await all(db, 'SELECT id FROM sessions')
-      const known = new Set(existing.map((row) => row.id))
-      for (const row of sessions) {
-        if (known.has(row.id)) {
-          skippedCount += 1
-          continue
-        }
-        statements.push(
-          db.prepare('INSERT INTO sessions VALUES (?,?,?)').bind(row.id, row.json, crypto.randomUUID())
-        )
-        importedCount += 1
-      }
+      // 先清掉“即将新增”的会话可能残留的文档，再把暂存索引复制过去；最后插入会话。
       statements.push(
-        db.prepare('INSERT OR IGNORE INTO files SELECT id, mime, bytes FROM staged_files WHERE owner=?').bind(id)
+        db
+          .prepare(
+            `DELETE FROM search_docs WHERE session_id IN (
+               SELECT s.id FROM staged_sessions s
+                WHERE s.owner=? AND NOT EXISTS (SELECT 1 FROM sessions t WHERE t.id=s.id))`
+          )
+          .bind(id),
+        db
+          .prepare(
+            `INSERT OR REPLACE INTO search_docs (session_id,message_id,role,text,updated_at)
+             SELECT d.session_id,d.message_id,d.role,d.text,d.updated_at
+               FROM staged_docs d
+              WHERE d.owner=? AND d.session_id IN (
+                SELECT s.id FROM staged_sessions s
+                 WHERE s.owner=? AND NOT EXISTS (SELECT 1 FROM sessions t WHERE t.id=s.id))`
+          )
+          .bind(id, id),
+        db
+          .prepare(
+            `INSERT INTO sessions (id,json,revision)
+             SELECT s.id,s.json,lower(hex(randomblob(16))) FROM staged_sessions s
+              WHERE s.owner=? AND NOT EXISTS (SELECT 1 FROM sessions t WHERE t.id=s.id)`
+          )
+          .bind(id),
+        db.prepare('INSERT OR IGNORE INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?').bind(id)
       )
     } else {
+      // 一条 INSERT 里无法给每行生成不同 UUID：先写同一个哨兵值，再统一改写成随机 revision。
+      const sentinel = `import-${crypto.randomUUID()}`
       statements.push(
         db.prepare('DELETE FROM sessions').bind(),
         db.prepare('DELETE FROM search_docs').bind(),
         db.prepare('DELETE FROM files').bind(),
         db.prepare('DELETE FROM drafts').bind(),
-        db.prepare('INSERT INTO sessions SELECT id, json, ? FROM staged_sessions WHERE owner=?').bind(crypto.randomUUID(), id),
-        db.prepare('INSERT INTO files SELECT id, mime, bytes FROM staged_files WHERE owner=?').bind(id)
+        db.prepare('INSERT INTO sessions SELECT id,json,? FROM staged_sessions WHERE owner=?').bind(sentinel, id),
+        db.prepare('INSERT INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?').bind(id),
+        db.prepare('UPDATE sessions SET revision=lower(hex(randomblob(16))) WHERE revision=?').bind(sentinel),
+        db.prepare('INSERT INTO search_docs SELECT session_id,message_id,role,text,updated_at FROM staged_docs WHERE owner=?').bind(id)
       )
-      // 每个会话用独立 revision 无法在一条 INSERT 里生成；先复制再用唯一值覆盖。
-      statements.push(
-        db.prepare("UPDATE sessions SET revision = lower(hex(randomblob(16))) WHERE revision = ?").bind(crypto.randomUUID())
-      )
-      importedCount = sessions.length
     }
     statements.push(
       db.prepare('DELETE FROM staged_sessions WHERE owner=?').bind(id),
       db.prepare('DELETE FROM staged_files WHERE owner=?').bind(id),
+      db.prepare('DELETE FROM staged_docs WHERE owner=?').bind(id),
       db.prepare('DELETE FROM imports WHERE id=?').bind(id),
       bumpVersion(db),
       bumpGeneration(db)
@@ -738,8 +763,17 @@ async function handleImports(request, db, parts, method) {
     for (const session of sessions) {
       validateSession(session, session?.id)
       statements.push(
-        db.prepare('INSERT OR REPLACE INTO staged_sessions VALUES (?,?,?)').bind(id, session.id, JSON.stringify(session))
+        db.prepare('INSERT OR REPLACE INTO staged_sessions VALUES (?,?,?)').bind(id, session.id, JSON.stringify(session)),
+        db.prepare('DELETE FROM staged_docs WHERE owner=? AND session_id=?').bind(id, session.id)
       )
+      const updatedAt = Number.isFinite(session.updatedAt) ? session.updatedAt : 0
+      for (const doc of extractSearchDocs(session)) {
+        statements.push(
+          db
+            .prepare('INSERT INTO staged_docs VALUES (?,?,?,?,?,?)')
+            .bind(id, session.id, doc.messageId, doc.role, doc.text, updatedAt)
+        )
+      }
     }
     if (statements.length > 0) await db.batch(statements)
     return json({ ok: true })
@@ -748,7 +782,16 @@ async function handleImports(request, db, parts, method) {
   if (parts.length === 4 && validId(entryId) && method === 'PUT') {
     if (operation === 'sessions') {
       const session = validateSession(await readBody(request, SESSION_LIMIT), entryId)
-      await run(db, 'INSERT OR REPLACE INTO staged_sessions VALUES (?,?,?)', id, entryId, JSON.stringify(session))
+      const updatedAt = Number.isFinite(session.updatedAt) ? session.updatedAt : 0
+      await db.batch([
+        db.prepare('INSERT OR REPLACE INTO staged_sessions VALUES (?,?,?)').bind(id, entryId, JSON.stringify(session)),
+        db.prepare('DELETE FROM staged_docs WHERE owner=? AND session_id=?').bind(id, entryId),
+        ...extractSearchDocs(session).map((doc) =>
+          db
+            .prepare('INSERT INTO staged_docs VALUES (?,?,?,?,?,?)')
+            .bind(id, entryId, doc.messageId, doc.role, doc.text, updatedAt)
+        ),
+      ])
       return json({ ok: true })
     }
     if (operation === 'files') {

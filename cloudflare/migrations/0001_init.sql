@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS staged_sessions (
   PRIMARY KEY (owner, id)
 );
 
+-- 导入时就把搜索片段抽好，提交时用 INSERT ... SELECT 复制，避免在 commit 里解析大量会话。
+CREATE TABLE IF NOT EXISTS staged_docs (
+  owner      TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  role       TEXT NOT NULL,
+  text       TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (owner, session_id, role, message_id)
+);
+
 CREATE TABLE IF NOT EXISTS staged_files (
   owner TEXT NOT NULL,
   id    TEXT NOT NULL,

@@ -44,6 +44,14 @@ const imageType = (bytes: Uint8Array): string => {
   return ''
 }
 
+/** 免费版跳过的大附件数量，由导入收尾时提示用户。 */
+let skippedFiles = 0
+export const takeSkippedFiles = () => {
+  const count = skippedFiles
+  skippedFiles = 0
+  return count
+}
+
 const readJson = async (entry: ArchiveEntry): Promise<unknown> => {
   const text = await (await readEntry(entry)).text()
   try {
@@ -130,6 +138,7 @@ export const importArchive = async (file: File): Promise<void> => {
     stored.set(id, type)
     // D1 单行上限 2MB：超出的原图跳过，会话本身照常导入。
     if (EDGE_API && data.size > 1_900_000) {
+      skippedFiles += 1
       return
     }
     pendingFiles.push({ id, blob: new Blob([data], { type }) })

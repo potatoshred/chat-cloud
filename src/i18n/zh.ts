@@ -182,6 +182,7 @@ export const zh = {
     : '默认追加新对话、保留现有数据，也可选择覆盖全部本地对话和附件。支持 DeepSeek 导出的 ZIP 文件。',
   historyImportedOne: '已导入 1 个对话',
   historyImported: '已导入 {count} 个对话',
+  historyImportSkippedFiles: '有 {count} 个附件超过 2MB，已跳过（会话仍已导入）。',
   historyImportFailed:
     '文件导入失败，可能是文件格式错误或使用了旧版的对话导出 ZIP 文件，请前往 DeepSeek 重新导出历史对话文件后再次导入。',
   historyExportFailed: '导出失败：{message}',

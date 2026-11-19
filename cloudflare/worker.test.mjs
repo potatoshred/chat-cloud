@@ -312,6 +312,32 @@ test('import staging commits in append mode', async () => {
   assert.equal(committed.skippedCount, 1)
   assert.equal(committed.sessions.length, 2)
   assert.equal((await call(env, '/data/files/f9', { cookie })).status, 200)
+
+  // 导入的会话立刻可搜索，不需要再保存一次。
+  const found = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })).json()
+  assert.equal(found.total, 2)
+})
+
+test('replace import swaps data and rebuilds the search index', async () => {
+  const { env } = fixture()
+  const cookie = await login(env)
+  const state = await (await call(env, '/data/state', { cookie })).json()
+  await call(env, '/data/sessions/old', {
+    method: 'PUT',
+    cookie,
+    body: { generation: state.generation, revision: null, session: sessionOf('old', '旧会话') },
+  })
+
+  const created = await (await call(env, '/data/imports', { method: 'POST', cookie })).json()
+  const staging = `/data/imports/${created.id}`
+  await call(env, `${staging}/sessions`, { method: 'PUT', cookie, body: [sessionOf('s9', '替换后')] })
+  const committed = await (await call(env, `${staging}/commit`, { method: 'POST', cookie, body: { mode: 'replace' } })).json()
+  assert.equal(committed.importedCount, 1)
+  assert.deepEqual(committed.sessions.map((session) => session.id), ['s9'])
+
+  const found = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })).json()
+  assert.equal(found.total, 1)
+  assert.equal(found.hits[0].sessionId, 's9')
 })
 
 test('api proxy injects the server key and forwards requests', async (t) => {
