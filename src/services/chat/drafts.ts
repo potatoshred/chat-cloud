@@ -5,6 +5,7 @@ import {
   cancelUpload,
   isImage,
   resolveMimeType,
+  compressForUpload,
   uploadAttachment,
   validateFiles,
   type UploadTask,
@@ -64,20 +65,21 @@ const upload = (attachment: DraftAttachment, apiKey: string) => {
   ).catch(() => {})
 }
 
-/** 整批校验通过后才加入草稿并开始上传。 */
-export const addDraftFiles = (
+/** 整批校验通过后才加入草稿并开始上传；免费版会先把过大的位图压到 900KB 以内。 */
+export const addDraftFiles = async (
   sessionId: string | null,
   files: File[],
   apiKey: string
-): TranslationMessage | null => {
+): Promise<TranslationMessage | null> => {
   if (files.length === 0) {
     return null
   }
-  const error = validateFiles(files, getDraft(sessionId).attachments.length)
+  const compressed = await compressForUpload(files)
+  const error = validateFiles(compressed, getDraft(sessionId).attachments.length)
   if (error) {
     return error
   }
-  const added = files.map(
+  const added = compressed.map(
     (file): DraftAttachment => ({
       id: createId(),
       file,

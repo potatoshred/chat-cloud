@@ -115,11 +115,11 @@ const Input = ({ sessionId, pending }: { sessionId: string | null; pending: bool
     return () => observer.disconnect()
   }, [t])
 
-  const acceptFiles = (files: File[]) => {
+  const acceptFiles = async (files: File[]) => {
     if (files.length === 0 || useChatStore.getState().importingHistory || !ensureApiKey()) {
       return
     }
-    const error = addDraftFiles(sessionId, files, useSettings.getState().apiKey ?? '')
+    const error = await addDraftFiles(sessionId, files, useSettings.getState().apiKey ?? '')
     if (error) {
       showToast(error)
     }

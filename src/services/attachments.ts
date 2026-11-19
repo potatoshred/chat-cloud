@@ -37,6 +37,78 @@ export const getUploadPurpose = (name: string, isImage: boolean): FilePurpose | 
   return LAYOUT_RECOGNITION_EXTS.has(getFileExt(name)) ? 'rich_layout_recognition' : 'user_data'
 }
 
+/** 免费版（D1 单行 2MB）：上传前把过大的位图缩到 900KB 以内，避免整批被拒。 */
+const EDGE_MAX_BYTES = 900 * 1024
+const EDGE_MAX_DIMENSION = 2560
+const COMPRESSIBLE = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+const drawToBlob = async (
+  bitmap: ImageBitmap,
+  type: string,
+  scale: number
+): Promise<Blob | null> => {
+  const width = Math.max(1, Math.round(bitmap.width * scale))
+  const height = Math.max(1, Math.round(bitmap.height * scale))
+  const canvas =
+    typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(width, height)
+      : Object.assign(document.createElement('canvas'), { width, height })
+  const context = canvas.getContext('2d')
+  if (!context) {
+    return null
+  }
+  context.drawImage(bitmap, 0, 0, width, height)
+  if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
+    return canvas.convertToBlob({ type, quality: 0.85 })
+  }
+  return new Promise((resolve) => {
+    ;(canvas as HTMLCanvasElement).toBlob((blob) => resolve(blob), type, 0.85)
+  })
+}
+
+/**
+ * 上传前压缩：只处理 jpeg/png/webp，保持原格式与文件名（预览按扩展名选 MIME）。
+ * 动图、SVG 会丢失特性或本来很小，不处理；容器版不做压缩。
+ */
+export const compressForUpload = async (files: File[]): Promise<File[]> => {
+  if (!EDGE_API) {
+    return files
+  }
+  return Promise.all(
+    files.map(async (file) => {
+      if (!COMPRESSIBLE.has(resolveMimeType(file)) || file.size <= EDGE_MAX_BYTES) {
+        return file
+      }
+      let bitmap: ImageBitmap
+      try {
+        bitmap = await createImageBitmap(file)
+      } catch {
+        return file
+      }
+      try {
+        let scale = Math.min(1, EDGE_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height))
+        let best = file
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          const blob = await drawToBlob(bitmap, file.type, scale)
+          if (blob && blob.size < best.size) {
+            best = new File([blob], file.name, { type: file.type, lastModified: file.lastModified })
+          }
+          if (blob && blob.size <= EDGE_MAX_BYTES) {
+            break
+          }
+          scale *= 0.75
+          if (scale < 0.15) {
+            break
+          }
+        }
+        return best
+      } finally {
+        bitmap.close()
+      }
+    })
+  )
+}
+
 /** 文件允许的最大体积（MB），按上传时的 purpose 区分 */
 const getMaxSizeMB = (file: File) =>
   getUploadPurpose(file.name, isImage(resolveMimeType(file))) === 'user_data'
