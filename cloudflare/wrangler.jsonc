@@ -14,7 +14,7 @@
     {
       "binding": "DB",
       "database_name": "deepseek-chat",
-      "database_id": "<在 wrangler d1 create 之后替换>"
+      "database_id": "00000000-0000-0000-0000-000000000000"
     }
   ],
   "observability": { "enabled": true }

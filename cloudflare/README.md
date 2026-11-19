@@ -27,6 +27,18 @@
 
 注意：`workers.dev` 在部分网络（尤其中国大陆）可能不可达；需要稳定访问就把自己的域名挂到同一个 Worker 上（域名本身要在 Cloudflare 托管）。
 
+## 一键部署按钮
+
+Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 账号 → 读取 `wrangler.jsonc` → 自动创建 D1 并回填 `database_id` → 用 Workers Builds 构建并部署。
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo)
+
+注意三点：
+
+1. 按钮只认**默认分支**（`main`）：这份实现合进 `main` 之后按钮才能用；
+2. 构建命令要改成 **`pnpm cf:build`**（默认的 `pnpm build` 是静态版，不会带 `CHAT_EDGE`）；
+3. 部署命令用仓库里的 `deploy` 脚本：先 `wrangler d1 migrations apply DB`，再 `wrangler deploy`。
+
 ## 部署
 
 前置：Cloudflare 账号（免费版无需信用卡）、Node 20+。命令在 `cloudflare/` 目录执行。
