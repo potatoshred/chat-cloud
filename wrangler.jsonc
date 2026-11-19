@@ -1,6 +1,6 @@
 {
   // 直接部署到 https://<name>.<account>.workers.dev；不需要 Pages。
-  "name": "deepseek-chat-demo",
+  "name": "chat-demo",
   "main": "cloudflare/worker.mjs",
   "compatibility_date": "2026-11-01",
   // 前端产物：先 CHAT_SERVER_API=true CHAT_EDGE=true pnpm build，再把 dist 作为静态资源。
