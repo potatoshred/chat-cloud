@@ -140,7 +140,8 @@ export const importArchive = async (
   // 攒批写入，避免每个会话/图片各发一个请求（1400+ 次往返经过隧道，极易被掐断）。
   // 按条数和累计大小双重上限触发，单批远小于服务端与 nginx 的 64MiB 限制。
   // Cloudflare 免费版单次请求解析受 10ms CPU 限制，批次要小得多。
-  const BATCH_COUNT = EDGE_API ? 3 : 25
+  // 字节上限才是 CPU 的真正约束；小会话按 20 条一批，避免每条都发一个请求。
+  const BATCH_COUNT = EDGE_API ? 20 : 25
   // 按 UTF-8 字节算：中文会话的字符数远小于体积，按字符攒批会撞上服务端 1MB 上限。
   const BATCH_BYTES = EDGE_API ? 256 * 1024 : 12 * 1024 * 1024
   let pendingSessions: Session[] = []
