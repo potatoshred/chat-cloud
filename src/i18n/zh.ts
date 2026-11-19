@@ -183,6 +183,7 @@ export const zh = {
   historyImportedOne: '已导入 1 个对话',
   historyImported: '已导入 {count} 个对话',
   historyImportProgress: '正在导入：{sessions} 个会话、{files} 个附件',
+  historyImportSkippedSessionsTitle: '已跳过 {count} 个会话（超过单条 2MB 限制）：',
   historyImportSkippedTitle: '已跳过 {count} 个附件：',
   historyImportFailedReason: '失败原因：{reason}',
   historyImportFailed:

@@ -512,7 +512,8 @@ const useHistoryImport = () => {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<Status>(null)
   const [progress, setProgress] = useState<{ sessions: number; files: number } | null>(null)
-  const [skipped, setSkipped] = useState<string[]>([])
+  const [skippedFiles, setSkippedFiles] = useState<string[]>([])
+  const [skippedSessions, setSkippedSessions] = useState<string[]>([])
   const [reason, setReason] = useState<string | null>(null)
   const importing = useRef(false)
 
@@ -524,7 +525,8 @@ const useHistoryImport = () => {
     setFile(null)
     setBusy(true)
     setStatus(null)
-    setSkipped([])
+    setSkippedFiles([])
+    setSkippedSessions([])
     setReason(null)
     setProgress({ sessions: 0, files: 0 })
     try {
@@ -533,7 +535,8 @@ const useHistoryImport = () => {
         key: result.count === 1 ? 'historyImportedOne' : 'historyImported',
         params: { count: result.count },
       })
-      setSkipped(result.skipped)
+      setSkippedFiles(result.skippedFiles)
+      setSkippedSessions(result.skippedSessions)
     } catch (error) {
       setStatus({ key: 'historyImportFailed', error: true })
       setReason(
@@ -559,7 +562,20 @@ const useHistoryImport = () => {
     setFile(null)
   }
 
-  return { file, mode, setMode, busy, status, progress, skipped, reason, select, cancel, confirm }
+  return {
+    file,
+    mode,
+    setMode,
+    busy,
+    status,
+    progress,
+    skippedFiles,
+    skippedSessions,
+    reason,
+    select,
+    cancel,
+    confirm,
+  }
 }
 
 /** 导入历史：默认追加新对话，可在确认时选择覆盖。 */
@@ -618,11 +634,23 @@ const ImportHistory = ({
           </span>
         </div>
       ) : null}
-      {historyImport.skipped.length > 0 ? (
+      {historyImport.skippedSessions.length > 0 ? (
         <div className={styles.importSkipped}>
-          <div>{t('historyImportSkippedTitle', { count: historyImport.skipped.length })}</div>
+          <div>
+            {t('historyImportSkippedSessionsTitle', { count: historyImport.skippedSessions.length })}
+          </div>
           <ul className={styles.importSkippedList}>
-            {historyImport.skipped.map((name) => (
+            {historyImport.skippedSessions.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {historyImport.skippedFiles.length > 0 ? (
+        <div className={styles.importSkipped}>
+          <div>{t('historyImportSkippedTitle', { count: historyImport.skippedFiles.length })}</div>
+          <ul className={styles.importSkippedList}>
+            {historyImport.skippedFiles.map((name) => (
               <li key={name}>{name}</li>
             ))}
           </ul>

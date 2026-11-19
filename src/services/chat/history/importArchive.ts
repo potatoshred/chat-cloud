@@ -48,16 +48,19 @@ const imageType = (bytes: Uint8Array): string => {
 /** 免费版单个归档的附件预算：暂存与最终各存一份，100MB 对应峰值 200MB。 */
 const EDGE_FILE_BUDGET = 100 * 1024 * 1024
 
-/** 免费版跳过的附件：收尾时由界面展示文件名列表。 */
-let skippedFiles = 0
+/** 跳过的附件与会话：收尾时由界面展示名字列表。 */
 let skippedNames: string[] = []
+let skippedSessionNames: string[] = []
 let importedFileBytes = 0
 export const takeSkippedFiles = () => {
-  const result = { count: skippedFiles, names: skippedNames }
-  skippedFiles = 0
+  const result = { files: skippedNames, sessions: skippedSessionNames }
   skippedNames = []
+  skippedSessionNames = []
   return result
 }
+
+const utf8 = new TextEncoder()
+const utf8Length = (text: string) => utf8.encode(text).byteLength
 
 /** 导入进度：已写入暂存的会话数与附件数。 */
 export type ImportProgress = { sessions: number; files: number }
@@ -111,8 +114,9 @@ export const importArchive = async (
   /** 已保存的原件：文件 ID → MIME。同一图片出现在多个会话目录时只保存一次。 */
   const stored = new Map<string, string>()
   importedFileBytes = 0
-  skippedFiles = 0
   skippedNames = []
+  skippedSessionNames = []
+  const skippedSessionIds = new Set<string>()
   let stagedSessions = 0
   let stagedFiles = 0
   const report = () => onProgress?.({ sessions: stagedSessions, files: stagedFiles })
@@ -124,7 +128,8 @@ export const importArchive = async (
   // 按条数和累计大小双重上限触发，单批远小于服务端与 nginx 的 64MiB 限制。
   // Cloudflare 免费版单次请求解析受 10ms CPU 限制，批次要小得多。
   const BATCH_COUNT = EDGE_API ? 3 : 25
-  const BATCH_BYTES = EDGE_API ? 512 * 1024 : 12 * 1024 * 1024
+  // 按 UTF-8 字节算：中文会话的字符数远小于体积，按字符攒批会撞上服务端 1MB 上限。
+  const BATCH_BYTES = EDGE_API ? 256 * 1024 : 12 * 1024 * 1024
   let pendingSessions: Session[] = []
   let pendingSessionBytes = 0
   let pendingFiles: StoredFile[] = []
@@ -169,7 +174,6 @@ export const importArchive = async (
       EDGE_API &&
       (blob.size > 1_900_000 || importedFileBytes + blob.size > EDGE_FILE_BUDGET)
     ) {
-      skippedFiles += 1
       if (skippedNames.length < 20) {
         skippedNames.push(entry.path.split('/').pop() ?? id)
       }
@@ -201,15 +205,25 @@ export const importArchive = async (
         if (local.session.id !== sessionId || imported.has(sessionId)) {
           fail('backupIncomplete')
         }
-        imported.add(sessionId)
-        currentSessionId = sessionId
-        for (const [imagePath, id] of local.images) {
-          images.set(imagePath, id)
-        }
-        pendingSessions.push(local.session)
-        pendingSessionBytes += JSON.stringify(local.session).length
-        if (pendingSessions.length >= BATCH_COUNT || pendingSessionBytes >= BATCH_BYTES) {
-          await flushSessions()
+        const json = JSON.stringify(local.session)
+        const bytes = utf8Length(json)
+        if (EDGE_API && bytes > 1_900_000) {
+          // 单个会话超过 D1 单行上限：跳过它，其余会话继续导入，并在结束时列出名字。
+          skippedSessionIds.add(sessionId)
+          if (skippedSessionNames.length < 20) {
+            skippedSessionNames.push(local.session.title || sessionId)
+          }
+        } else {
+          imported.add(sessionId)
+          currentSessionId = sessionId
+          for (const [imagePath, id] of local.images) {
+            images.set(imagePath, id)
+          }
+          pendingSessions.push(local.session)
+          pendingSessionBytes += bytes
+          if (pendingSessions.length >= BATCH_COUNT || pendingSessionBytes >= BATCH_BYTES) {
+            await flushSessions()
+          }
         }
       } else if (path === INDEX_PATH && !index) {
         index = readSessionIndex(await readJson(entry))
@@ -233,11 +247,12 @@ export const importArchive = async (
   }
   // index 只列出成功写出的会话，与会话文件一一对应。
   const listed = new Set(index?.map((entry) => entry.id))
+  const covered = new Set([...imported, ...skippedSessionIds])
   if (
     !index ||
     listed.size !== index.length ||
-    listed.size !== imported.size ||
-    [...imported].some((id) => !listed.has(id))
+    listed.size !== covered.size ||
+    [...covered].some((id) => !listed.has(id))
   ) {
     fail('backupIncomplete')
   }

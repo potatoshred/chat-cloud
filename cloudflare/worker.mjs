@@ -14,7 +14,10 @@ const SESSION_TTL = 12 * 60 * 60
 const LOGIN_CSRF_TTL = 10 * 60
 // D1 单行/BLOB 上限 2,000,000 字节，留出 JSON 外壳余量。
 const FILE_LIMIT = 1_900_000
-const SESSION_LIMIT = 1_800_000
+const SESSION_LIMIT = 1_900_000
+// 导入批次可能只装一条接近上限的会话，读入上限要略高于单会话上限。
+const IMPORT_BATCH_LIMIT = 2_100_000
+const byteLength = (text) => new TextEncoder().encode(text).byteLength
 const USAGE_HOURS = 24
 const USAGE_LIMIT = 200
 const USAGE_STATUSES = ['done', 'stopped', 'error']
@@ -515,7 +518,7 @@ async function handleData(request, env, url) {
     }
     validateSession(session, id)
     const body = JSON.stringify(session)
-    if (body.length > SESSION_LIMIT) fail(413, '会话过大：单个会话上限约 1.8MB。')
+    if (byteLength(body) > SESSION_LIMIT) fail(413, '会话过大：单个会话上限约 1.9MB（按 UTF-8 字节）。')
     const revision = crypto.randomUUID()
     const statements = [db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?)').bind(id, body, revision)]
     if (method === 'PATCH') {
@@ -774,7 +777,7 @@ async function handleImports(request, db, parts, method) {
   }
 
   if (parts.length === 3 && operation === 'sessions' && method === 'PUT') {
-    const sessions = await readBody(request, 1024 * 1024)
+    const sessions = await readBody(request, IMPORT_BATCH_LIMIT)
     if (!Array.isArray(sessions)) fail(400, '请求格式无效。')
     const statements = []
     for (const session of sessions) {
