@@ -134,6 +134,22 @@ const first = (db, sql, ...args) => db.prepare(sql).bind(...args).first()
 const run = (db, sql, ...args) => db.prepare(sql).bind(...args).run()
 
 const getMeta = async (db, key) => (await first(db, 'SELECT value FROM meta WHERE key=?', key))?.value
+
+/** meta 的初始行：schema 只建表，老库可能没有 generation/version。每个库只检查一次。 */
+const metaReady = new WeakSet()
+const ensureMeta = async (db) => {
+  if (metaReady.has(db)) {
+    return
+  }
+  const row = await first(db, "SELECT COUNT(*) AS n FROM meta WHERE key IN ('generation','version')")
+  if ((row?.n ?? 0) < 2) {
+    await db.batch([
+      db.prepare("INSERT OR IGNORE INTO meta VALUES ('generation', ?)").bind(crypto.randomUUID()),
+      db.prepare("INSERT OR IGNORE INTO meta VALUES ('version', '0')").bind(),
+    ])
+  }
+  metaReady.add(db)
+}
 const putMeta = (db, key, value) =>
   db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').bind(key, String(value))
 /** 版本号自增放在 SQL 里，避免“读-改-写”在并发请求间丢更新。 */
@@ -436,6 +452,7 @@ async function deleteSession(db, id) {
 
 async function handleData(request, env, url) {
   const db = env.DB
+  await ensureMeta(db)
   const parts = url.pathname
     .slice('/data/'.length)
     .split('/')

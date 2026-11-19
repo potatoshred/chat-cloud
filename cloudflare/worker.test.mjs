@@ -340,6 +340,17 @@ test('replace import swaps data and rebuilds the search index', async () => {
   assert.equal(found.hits[0].sessionId, 's9')
 })
 
+test('state works even when meta rows are missing', async () => {
+  const { db, env } = fixture()
+  db.exec("DELETE FROM meta")
+  const cookie = await login(env)
+  const response = await call(env, '/data/state', { cookie })
+  assert.equal(response.status, 200)
+  const state = await response.json()
+  assert.equal(typeof state.version, 'string')
+  assert.equal(typeof state.generation, 'string')
+})
+
 test('missing tables report a migration hint', async () => {
   const db = createD1()
   const env = makeEnv(db)

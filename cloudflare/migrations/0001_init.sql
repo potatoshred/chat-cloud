@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
+-- 初始版本号与库标识；INSERT OR IGNORE 保证重复执行不覆盖已有值。
+INSERT OR IGNORE INTO meta (key, value) VALUES ('generation', lower(hex(randomblob(16))));
+INSERT OR IGNORE INTO meta (key, value) VALUES ('version', '0');
+
 CREATE TABLE IF NOT EXISTS sessions (
   id       TEXT PRIMARY KEY,
   json     TEXT NOT NULL,
