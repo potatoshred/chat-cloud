@@ -191,6 +191,7 @@ export const en = {
     : 'By default new chats are appended and existing data is kept; replacing all local chats and attachments is also available. Supports ZIP files exported from DeepSeek.',
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
+  historyImportRunningHint: 'Writing to the server — keep this window open.',
   historyImportProgress: 'Importing: {sessions} chats, {files} attachments',
   historyImportSkippedExistingTitle: 'Skipped {count} chats that already exist (append mode):',
   historyImportSkippedSessionsTitle: 'Skipped {count} chats (each over the 2 MB row limit):',

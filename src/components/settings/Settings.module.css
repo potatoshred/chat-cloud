@@ -707,3 +707,9 @@
   padding-left: 18px;
   overflow-y: auto;
 }
+
+.importRunning {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

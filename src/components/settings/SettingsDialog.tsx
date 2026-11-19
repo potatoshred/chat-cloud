@@ -345,6 +345,23 @@ const importModes: { value: ImportMode; label: TranslationKey; description: Tran
 ]
 
 /** 导入的二次确认，叠在设置弹窗上：选择追加或覆盖后再确认。 */
+const ImportSkipped = ({
+  title,
+  names,
+}: {
+  title: string
+  names: string[]
+}) => (
+  <div className={styles.importSkipped}>
+    <div>{title}</div>
+    <ul className={styles.importSkippedList}>
+      {names.map((name) => (
+        <li key={name}>{name}</li>
+      ))}
+    </ul>
+  </div>
+)
+
 const ImportConfirm = ({
   historyImport,
 }: {
@@ -353,48 +370,107 @@ const ImportConfirm = ({
   const t = useTranslate()
   const { mode, setMode } = historyImport
   const replace = mode === 'replace'
+  const running = historyImport.busy
+  const done = !running && historyImport.status !== null
+  const status = historyImport.status
+  const progress = historyImport.progress ?? { sessions: 0, files: 0 }
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
       className={styles.importConfirm}
-      onClose={historyImport.cancel}
+      onClose={running ? () => {} : historyImport.close}
       footer={
-        <>
-          <Button variant="outlined" size="m" autoFocus onClick={historyImport.cancel}>
-            {t('cancel')}
+        running ? null : done ? (
+          <Button variant="primary" size="m" autoFocus onClick={historyImport.close}>
+            {t('close')}
           </Button>
-          <Button
-            variant={replace ? 'dangerOutlined' : 'primary'}
-            size="m"
-            onClick={() => void historyImport.confirm()}
-          >
-            {t(replace ? 'historyImportConfirmReplace' : 'historyImportConfirm')}
-          </Button>
-        </>
+        ) : (
+          <>
+            <Button variant="outlined" size="m" autoFocus onClick={historyImport.close}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant={replace ? 'dangerOutlined' : 'primary'}
+              size="m"
+              onClick={() => void historyImport.confirm()}
+            >
+              {t(replace ? 'historyImportConfirmReplace' : 'historyImportConfirm')}
+            </Button>
+          </>
+        )
       }
     >
-      <div className={styles.importConfirmText}>
-        {t(replace ? 'historyImportConfirmDescriptionReplace' : 'historyImportConfirmDescriptionAppend')}
-      </div>
-      <div role="radiogroup" aria-label={t('historyImportMode')} className={styles.importModeOptions}>
-        {importModes.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={mode === option.value}
-            className={clsx(
-              styles.importModeOption,
-              mode === option.value && styles.importModeOptionSelected,
-              option.danger && styles.importModeOptionDanger
-            )}
-            onClick={() => setMode(option.value)}
-          >
-            <span className={styles.importModeLabel}>{t(option.label)}</span>
-            <span className={styles.importModeDescription}>{t(option.description)}</span>
-          </button>
-        ))}
-      </div>
+      {running ? (
+        <div className={styles.importRunning}>
+          <div className={styles.importProgress} role="status" aria-live="polite">
+            <div className={styles.importProgressBar} />
+            <span>{t('historyImportProgress', progress)}</span>
+          </div>
+          <div className={styles.importConfirmText}>{t('historyImportRunningHint')}</div>
+        </div>
+      ) : done ? (
+        <>
+          <div className={styles.importConfirmText}>
+            {status
+              ? t(status.key, status.reason ? { message: t(status.reason) } : status.params)
+              : null}
+          </div>
+          {historyImport.skippedExisting.length > 0 ? (
+            <ImportSkipped
+              title={t('historyImportSkippedExistingTitle', {
+                count: historyImport.skippedExisting.length,
+              })}
+              names={historyImport.skippedExisting}
+            />
+          ) : null}
+          {historyImport.skippedSessions.length > 0 ? (
+            <ImportSkipped
+              title={t('historyImportSkippedSessionsTitle', {
+                count: historyImport.skippedSessions.length,
+              })}
+              names={historyImport.skippedSessions}
+            />
+          ) : null}
+          {historyImport.skippedFiles.length > 0 ? (
+            <ImportSkipped
+              title={t('historyImportSkippedTitle', {
+                count: historyImport.skippedFiles.length,
+              })}
+              names={historyImport.skippedFiles}
+            />
+          ) : null}
+          {historyImport.reason ? (
+            <div className={styles.error}>
+              {t('historyImportFailedReason', { reason: historyImport.reason })}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <div className={styles.importConfirmText}>
+            {t(replace ? 'historyImportConfirmDescriptionReplace' : 'historyImportConfirmDescriptionAppend')}
+          </div>
+          <div role="radiogroup" aria-label={t('historyImportMode')} className={styles.importModeOptions}>
+            {importModes.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={mode === option.value}
+                className={clsx(
+                  styles.importModeOption,
+                  mode === option.value && styles.importModeOptionSelected,
+                  option.danger && styles.importModeOptionDanger
+                )}
+                onClick={() => setMode(option.value)}
+              >
+                <span className={styles.importModeLabel}>{t(option.label)}</span>
+                <span className={styles.importModeDescription}>{t(option.description)}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </Modal>
   )
 }
@@ -523,7 +599,6 @@ const useHistoryImport = () => {
       return
     }
     importing.current = true
-    setFile(null)
     setBusy(true)
     setStatus(null)
     setSkippedFiles([])
@@ -560,9 +635,18 @@ const useHistoryImport = () => {
     setMode('append')
     setFile(next)
   }
-  const cancel = () => {
+  const close = () => {
+    if (importing.current) {
+      return
+    }
     setMode('append')
     setFile(null)
+    setStatus(null)
+    setProgress(null)
+    setSkippedFiles([])
+    setSkippedSessions([])
+    setSkippedExisting([])
+    setReason(null)
   }
 
   return {
@@ -577,7 +661,7 @@ const useHistoryImport = () => {
     skippedExisting,
     reason,
     select,
-    cancel,
+    close,
     confirm,
   }
 }
@@ -627,56 +711,6 @@ const ImportHistory = ({
         </>
         }
       />
-      {historyImport.busy && historyImport.progress ? (
-        <div className={styles.importProgress} role="status" aria-live="polite">
-          <div className={styles.importProgressBar} />
-          <span>
-            {t('historyImportProgress', {
-              sessions: historyImport.progress.sessions,
-              files: historyImport.progress.files,
-            })}
-          </span>
-        </div>
-      ) : null}
-      {historyImport.skippedExisting.length > 0 ? (
-        <div className={styles.importSkipped}>
-          <div>
-            {t('historyImportSkippedExistingTitle', { count: historyImport.skippedExisting.length })}
-          </div>
-          <ul className={styles.importSkippedList}>
-            {historyImport.skippedExisting.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {historyImport.skippedSessions.length > 0 ? (
-        <div className={styles.importSkipped}>
-          <div>
-            {t('historyImportSkippedSessionsTitle', { count: historyImport.skippedSessions.length })}
-          </div>
-          <ul className={styles.importSkippedList}>
-            {historyImport.skippedSessions.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {historyImport.skippedFiles.length > 0 ? (
-        <div className={styles.importSkipped}>
-          <div>{t('historyImportSkippedTitle', { count: historyImport.skippedFiles.length })}</div>
-          <ul className={styles.importSkippedList}>
-            {historyImport.skippedFiles.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {historyImport.reason ? (
-        <div className={styles.error}>
-          {t('historyImportFailedReason', { reason: historyImport.reason })}
-        </div>
-      ) : null}
     </>
   )
 }
