@@ -758,22 +758,48 @@ async function handleImports(request, db, parts, method) {
     if (!object(types) || Object.values(types).some((value) => typeof value !== 'string')) {
       fail(400, '附件类型无效。')
     }
-    const rows = await all(db, 'SELECT id, json FROM staged_sessions WHERE owner=?', id)
-    const statements = []
-    for (const row of rows) {
-      const session = JSON.parse(row.json)
-      for (const message of session.messages) {
-        if (message.role !== 'user') continue
-        for (const file of message.files) {
-          file.mimeType = Object.hasOwn(types, file.id) ? types[file.id] : ''
+    // 分页处理：一次读取所有会话会撑爆 D1 的单次请求/内存，失败还会连累整个导入。
+    // 每次 8 个会话、最多 20 页（≈40 次查询，留在免费版 50 次/调用的额度内）。
+    let cursor = ''
+    let applied = 0
+    try {
+      for (let page = 0; page < 20; page += 1) {
+        const rows = await all(
+          db,
+          'SELECT id,json FROM staged_sessions WHERE owner=? AND id>? ORDER BY id LIMIT 8',
+          id,
+          cursor
+        )
+        if (rows.length === 0) {
+          break
+        }
+        const statements = []
+        for (const row of rows) {
+          const session = JSON.parse(row.json)
+          for (const message of session.messages) {
+            if (message.role !== 'user') continue
+            for (const file of message.files) {
+              file.mimeType = Object.hasOwn(types, file.id) ? types[file.id] : ''
+            }
+          }
+          statements.push(
+            db
+              .prepare('UPDATE staged_sessions SET json=? WHERE owner=? AND id=?')
+              .bind(JSON.stringify(session), id, row.id)
+          )
+        }
+        await db.batch(statements)
+        applied += rows.length
+        cursor = rows[rows.length - 1].id
+        if (rows.length < 8) {
+          break
         }
       }
-      statements.push(
-        db.prepare('UPDATE staged_sessions SET json=? WHERE owner=? AND id=?').bind(JSON.stringify(session), id, row.id)
-      )
+    } catch (error) {
+      // 类型回写只是修正扩展名，失败不应让整个导入失败。
+      console.error('types update failed', error)
     }
-    if (statements.length > 0) await db.batch(statements)
-    return json({ ok: true })
+    return json({ ok: true, applied })
   }
 
   if (parts.length === 3 && operation === 'sessions' && method === 'PUT') {

@@ -318,6 +318,21 @@ test('import staging commits in append mode', async () => {
   assert.equal(found.total, 2)
 })
 
+test('types update pages through large imports', async () => {
+  const { env } = fixture()
+  const cookie = await login(env)
+  const created = await (await call(env, '/data/imports', { method: 'POST', cookie })).json()
+  const staging = `/data/imports/${created.id}`
+  const sessions = Array.from({ length: 12 }, (_, index) => sessionOf(`p${index}`, `批量 ${index}`))
+  assert.equal(
+    (await call(env, `${staging}/sessions`, { method: 'PUT', cookie, body: sessions })).status,
+    200
+  )
+  const updated = await call(env, `${staging}/types`, { method: 'PATCH', cookie, body: {} })
+  assert.equal(updated.status, 200)
+  assert.equal((await updated.json()).applied, 12)
+})
+
 test('replace import swaps data and rebuilds the search index', async () => {
   const { env } = fixture()
   const cookie = await login(env)
