@@ -305,15 +305,13 @@ const refreshDrafts = async () => {
             id: item.id,
             file,
             isImage: item.isImage,
-            previewUrl: item.isImage ? URL.createObjectURL(file) : null,
           }
         })
       )
       if (epoch !== draftEpoch || dirtyDrafts.has(id) || getDraft(id) !== previous) {
-        attachments.forEach((item) => releaseAttachment(item, false))
         continue
       }
-      previous.attachments.forEach((item) => releaseAttachment(item, true))
+      previous.attachments.forEach((item) => cancelUpload(item.id))
       const draft = { text: row.draft.text, attachments }
       useDrafts.setState((state) => {
         const drafts = new Map(state.drafts)
@@ -329,7 +327,7 @@ const refreshDrafts = async () => {
     }
     for (const id of draftVersions.keys()) {
       if (!present.has(id) && !dirtyDrafts.has(id) && !savingDrafts.has(id)) {
-        getDraft(id).attachments.forEach((item) => releaseAttachment(item, true))
+        getDraft(id).attachments.forEach((item) => cancelUpload(item.id))
         useDrafts.setState((state) => {
           const drafts = new Map(state.drafts)
           drafts.delete(id)
