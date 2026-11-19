@@ -17,6 +17,16 @@
 | 同步 | 30 秒轮询 + 空闲暂停 | **不轮询**：只在打开、回到页面、回复结束后同步 |
 | 用量 | 余额 + 24h 日志 | **只有余额**（24h 统计要扫全部消息，D1 读额度不划算） |
 
+## 为什么不用 Pages
+
+不需要 Pages。`wrangler.jsonc` 里是 `main` + `assets`，也就是「一个 Worker 顺带托管静态资源」：
+
+- `wrangler deploy` 会直接给出 `https://<worker>.<你的子域>.workers.dev`，HTTPS、Cookie、SPA 回退都能用；
+- 只有 `/data/*`、`/api/*`、`/auth/*`、`/login`、`/logout` 会触发 Worker（`run_worker_first`），其余静态文件由边缘直接返回，不占 10 万次/天的 Worker 请求；
+- Pages 的价值是 Git 集成和预览环境，这里用不上；以后要换自定义域名，只改 `routes`，代码不动。
+
+注意：`workers.dev` 在部分网络（尤其中国大陆）可能不可达；需要稳定访问就把自己的域名挂到同一个 Worker 上（域名本身要在 Cloudflare 托管）。
+
 ## 部署
 
 前置：Cloudflare 账号（免费版无需信用卡）、Node 20+。命令在 `cloudflare/` 目录执行。

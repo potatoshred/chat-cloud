@@ -1,4 +1,5 @@
 {
+  // 直接部署到 https://<name>.<account>.workers.dev；不需要 Pages。
   "name": "deepseek-chat-demo",
   "main": "worker.mjs",
   "compatibility_date": "2026-11-01",
