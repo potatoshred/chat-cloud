@@ -759,21 +759,24 @@ async function handleImports(request, db, parts, method) {
       fail(400, '附件类型无效。')
     }
     // 分页处理：一次读取所有会话会撑爆 D1 的单次请求/内存，失败还会连累整个导入。
-    // 每次 8 个会话、最多 20 页（≈40 次查询，留在免费版 50 次/调用的额度内）。
+    // 每页 50 个会话（1 次读 + 1 次 batch）；免费版 50 次查询/调用，留出余量最多 20 页 = 1000 个会话。
     let cursor = ''
     let applied = 0
+    let queries = 0
     try {
-      for (let page = 0; page < 20; page += 1) {
+      for (let page = 0; page < 20 && queries < 46; page += 1) {
         const rows = await all(
           db,
-          'SELECT id,json FROM staged_sessions WHERE owner=? AND id>? ORDER BY id LIMIT 8',
+          'SELECT id,json FROM staged_sessions WHERE owner=? AND id>? ORDER BY id LIMIT 50',
           id,
           cursor
         )
+        queries += 1
         if (rows.length === 0) {
           break
         }
-        const statements = []
+        let statements = []
+        let bytes = 0
         for (const row of rows) {
           const session = JSON.parse(row.json)
           for (const message of session.messages) {
@@ -782,16 +785,26 @@ async function handleImports(request, db, parts, method) {
               file.mimeType = Object.hasOwn(types, file.id) ? types[file.id] : ''
             }
           }
+          const value = JSON.stringify(session)
+          bytes += value.length
           statements.push(
-            db
-              .prepare('UPDATE staged_sessions SET json=? WHERE owner=? AND id=?')
-              .bind(JSON.stringify(session), id, row.id)
+            db.prepare('UPDATE staged_sessions SET json=? WHERE owner=? AND id=?').bind(value, id, row.id)
           )
+          // 单批不超过 ~2MB，避免一次 batch 的 payload 过大。
+          if (bytes > 2_000_000) {
+            await db.batch(statements)
+            queries += 1
+            statements = []
+            bytes = 0
+          }
         }
-        await db.batch(statements)
+        if (statements.length > 0) {
+          await db.batch(statements)
+          queries += 1
+        }
         applied += rows.length
         cursor = rows[rows.length - 1].id
-        if (rows.length < 8) {
+        if (rows.length < 50) {
           break
         }
       }
