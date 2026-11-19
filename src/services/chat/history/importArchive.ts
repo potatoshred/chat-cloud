@@ -2,6 +2,7 @@ import * as db from '../db.js'
 import type { StoredFile } from '../localDb.js'
 import type { Session } from '../types.js'
 import { BackupError, fail } from './errors.js'
+import { EDGE_API } from '../../api/config.js'
 import type { SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, USER_PATH, parseSessionPath, sessionFilesDir } from './paths.js'
 import { checkManifest, readSessionFile, readSessionIndex } from './schema.js'
@@ -94,8 +95,9 @@ export const importArchive = async (file: File): Promise<void> => {
 
   // 攒批写入，避免每个会话/图片各发一个请求（1400+ 次往返经过隧道，极易被掐断）。
   // 按条数和累计大小双重上限触发，单批远小于服务端与 nginx 的 64MiB 限制。
-  const BATCH_COUNT = 25
-  const BATCH_BYTES = 12 * 1024 * 1024
+  // Cloudflare 免费版单次请求解析受 10ms CPU 限制，批次要小得多。
+  const BATCH_COUNT = EDGE_API ? 3 : 25
+  const BATCH_BYTES = EDGE_API ? 512 * 1024 : 12 * 1024 * 1024
   let pendingSessions: Session[] = []
   let pendingSessionBytes = 0
   let pendingFiles: StoredFile[] = []
@@ -126,6 +128,10 @@ export const importArchive = async (file: File): Promise<void> => {
     const data = await readEntry(entry)
     const type = imageType(new Uint8Array(await data.slice(0, 16).arrayBuffer()))
     stored.set(id, type)
+    // D1 单行上限 2MB：超出的原图跳过，会话本身照常导入。
+    if (EDGE_API && data.size > 1_900_000) {
+      return
+    }
     pendingFiles.push({ id, blob: new Blob([data], { type }) })
     pendingFileBytes += data.size
     if (pendingFiles.length >= BATCH_COUNT || pendingFileBytes >= BATCH_BYTES) {

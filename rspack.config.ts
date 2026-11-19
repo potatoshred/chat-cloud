@@ -83,6 +83,7 @@ export const createConfig = ({
     new rspack.DefinePlugin({
       __API_ORIGIN__: JSON.stringify(apiOrigin),
       __SERVER_API__: JSON.stringify(process.env.CHAT_SERVER_API === 'true'),
+      __EDGE_API__: JSON.stringify(process.env.CHAT_EDGE === 'true'),
     }),
     new rspack.CopyRspackPlugin({
       patterns: [

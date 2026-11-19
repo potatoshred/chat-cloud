@@ -1,0 +1,21 @@
+{
+  // 直接部署到 https://<name>.<account>.workers.dev；不需要 Pages。
+  "name": "deepseek-chat-demo",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-01",
+  // 前端产物：先 CHAT_SERVER_API=true CHAT_EDGE=true pnpm build，再把 dist 作为静态资源。
+  "assets": {
+    "directory": "../dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/data/*", "/api/*", "/auth/*", "/login", "/logout"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "deepseek-chat",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "observability": { "enabled": true }
+}

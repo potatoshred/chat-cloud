@@ -5,7 +5,8 @@ import type { CreateMessageRequest } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import { useSettings } from '../settings.js'
-import { subscribeSync } from '../syncTicker.js'
+import { subscribeSync, triggerSync } from '../syncTicker.js'
+import { EDGE_API } from '../api/config.js'
 import {
   appendBranch,
   getVisibleMessages,
@@ -262,6 +263,7 @@ export const bindChatPersistence = () => {
   }
   const unsubscribeSync = SERVER_API ? subscribeSync(refresh) : undefined
   // Persist partial replies regularly while the owning device receives the stream.
+  // 免费版把间隔拉长：每次落盘都会写会话 + 搜索索引，D1 的写额度经不起 2 秒一次。
   const checkpoint = SERVER_API
     ? window.setInterval(() => {
         if (!get().importingHistory) {
@@ -270,7 +272,7 @@ export const bindChatPersistence = () => {
             persist(id)
           }
         }
-      }, 2000)
+      }, EDGE_API ? 10_000 : 2000)
     : undefined
   return () => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -1202,6 +1204,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+    // 免费版没有轮询：回复结束后补一次同步，把其他设备的改动带回来。
+    if (EDGE_API) {
+      triggerSync()
+    }
   }
 }
 

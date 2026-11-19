@@ -10,7 +10,9 @@
     "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
-    "format": "oxfmt --write ."
+    "format": "oxfmt --write .",
+    "cf:build": "CHAT_SERVER_API=true CHAT_EDGE=true pnpm build && cp cloudflare/_headers dist/_headers",
+    "deploy": "npx --yes wrangler@latest d1 migrations apply DB --remote --config cloudflare/wrangler.jsonc && npx --yes wrangler@latest deploy --config cloudflare/wrangler.jsonc"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",
