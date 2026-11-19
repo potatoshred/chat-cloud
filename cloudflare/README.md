@@ -21,7 +21,7 @@
 
 不需要 Pages。`wrangler.jsonc` 里是 `main` + `assets`，也就是「一个 Worker 顺带托管静态资源」：
 
-- `wrangler deploy` 会直接给出 `https://<worker>.<你的子域>.workers.dev`，HTTPS、Cookie、SPA 回退都能用；
+- 根目录的 `wrangler.jsonc` 配了 `main`，`wrangler deploy` 会直接给出 `https://<worker>.<你的子域>.workers.dev`，HTTPS、Cookie、SPA 回退都能用；
 - 只有 `/data/*`、`/api/*`、`/auth/*`、`/login`、`/logout` 会触发 Worker（`run_worker_first`），其余静态文件由边缘直接返回，不占 10 万次/天的 Worker 请求；
 - Pages 的价值是 Git 集成和预览环境，这里用不上；以后要换自定义域名，只改 `routes`，代码不动。
 
@@ -29,7 +29,7 @@
 
 ## 一键部署按钮
 
-Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 账号 → 读取 `wrangler.jsonc` → 自动创建 D1 并回填 `database_id` → 用 Workers Builds 构建并部署。
+Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 账号 → 读取**根目录**的 `wrangler.jsonc` → 自动创建 D1 并回填 `database_id` → 用 Workers Builds 构建并部署。配置放在子目录时，Cloudflare 会把这个仓库当成「纯静态资源」，因而无法添加运行时变量和密钥。
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo)
 
@@ -46,21 +46,19 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 ## 部署
 
-前置：Cloudflare 账号（免费版无需信用卡）、Node 20+。命令在 `cloudflare/` 目录执行。
+前置：Cloudflare 账号（免费版无需信用卡）、Node 20+。**命令在仓库根目录执行**（`wrangler.jsonc` 在根目录，Deploy 按钮也只读根目录配置）。
 
 ```sh
-# 1. 建库，把输出的 database_id 填进 wrangler.jsonc
+# 1. 建库，把输出的 database_id 填进根目录的 wrangler.jsonc
 npx wrangler d1 create deepseek-chat
 
 # 2. 建表
-npx wrangler d1 execute deepseek-chat --remote --file=schema.sql
+npx wrangler d1 execute deepseek-chat --remote --file=cloudflare/schema.sql
 
 # 3. 构建前端（EDGE 开关会收紧附件上限与导入批次）
-cd ..
-CHAT_SERVER_API=true CHAT_EDGE=true pnpm build
+pnpm cf:build
 
 # 4. 配置密钥
-cd cloudflare
 npx wrangler secret put AUTH_USERNAME
 npx wrangler secret put AUTH_PASSWORD      # 至少 14 位；同时用于派生 Cookie 签名密钥
 npx wrangler secret put DEEPSEEK_API_KEY
