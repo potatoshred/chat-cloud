@@ -12,7 +12,8 @@
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write .",
     "cf:build": "CHAT_SERVER_API=true CHAT_EDGE=true pnpm build && cp cloudflare/_headers dist/_headers",
-    "deploy": "node scripts/cloudflare-deploy.mjs"
+    "deploy": "node scripts/cloudflare-deploy.mjs",
+    "cf:build:pages": "pnpm cf:build && cp cloudflare/worker.mjs dist/_worker.js"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",

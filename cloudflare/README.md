@@ -44,6 +44,40 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 注意：按钮只认**默认分支**（`main`）。`cf:build` 还会把 `cloudflare/_headers` 复制进 `dist`，用来给 `index.html` 加 `no-store`、给带哈希的静态文件加长缓存。
 
+## 部署到 pages.dev（可选）
+
+一键按钮只能建 Worker，pages.dev 要单独建一个 Pages 项目。代码不用改——Pages 的 advanced mode 支持把整个 Worker 放进 `_worker.js`，并保留 `env.ASSETS` 与 D1 绑定。
+
+1. 构建时把 Worker 复制进产物：
+
+   ```sh
+   pnpm cf:build:pages      # = cf:build + cp cloudflare/worker.mjs dist/_worker.js
+   ```
+
+2. Cloudflare 控制台 → Workers & Pages → Create → Pages → 连接 Git 仓库：
+   - Build command：`pnpm cf:build:pages`
+   - Build output directory：`dist`
+
+3. 项目 Settings → Bindings 添加 D1：
+   - 变量名 `DB`，选择 `deepseek-chat`（和 Worker 版共用同一个库即可）
+
+4. Settings → Variables and Secrets 添加两个**密钥**：`AUTH_PASSWORD`、`DEEPSEEK_API_KEY`；`AUTH_USERNAME` 直接写进上面的 `vars` 也行（Pages 的设置里加普通变量）。
+
+5. 首次部署前跑一次迁移（本地执行，指向同一个 D1）：
+
+   ```sh
+   npx wrangler d1 migrations apply DB --remote
+   ```
+
+6. 部署完成后访问 `https://<项目名>.pages.dev`。
+
+注意：
+
+- Pages 的 Functions 免费额度与 Workers 相同（10 万请求/天、10ms CPU），静态资源不计费；
+- Pages 项目**不会**读根目录的 `wrangler.jsonc`（那是 Worker 的配置），绑定和变量都在项目设置里配；
+- `_worker.js` 必须存在于输出目录，`cf:build:pages` 已经帮你复制；
+- **advanced mode 会拦截所有请求**：静态文件也要经过 Function 再 `env.ASSETS.fetch`，所以每次页面加载的 HTML/JS/CSS 也计入 10 万请求/天。个人用足够（约 1 万次页面加载），但和 Worker + Static Assets 的"静态不计数"不同。
+
 ## 变量与密钥
 
 `wrangler.jsonc` 里已经放好位置：
