@@ -44,6 +44,25 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 注意：按钮只认**默认分支**（`main`）。`cf:build` 还会把 `cloudflare/_headers` 复制进 `dist`，用来给 `index.html` 加 `no-store`、给带哈希的静态文件加长缓存。
 
+## 部署命令必须指向建库脚本
+
+Workers Builds 项目在创建时会**固化**「部署命令」，之后仓库里的 `package.json` 改动不会同步过去。如果日志里出现：
+
+```
+Executing user deploy command: npx wrangler deploy
+D1 binding 'DB' references database '00000000-...' which was not found
+```
+
+说明它绕过了 `deploy` 脚本。到 Worker → Settings → Build 把**部署命令**改成：
+
+```
+node scripts/cloudflare-deploy.mjs
+```
+
+（等同于 `pnpm deploy`。）脚本会：按名字找 D1 → 没有就创建并把 `database_id` 写回 `wrangler.jsonc` → 执行迁移 → 部署。
+
+如果构建令牌没有 D1 权限，也可以手动建库，并在项目里加一个构建变量 `D1_DATABASE_ID=<uuid>`，脚本会直接使用它。
+
 ## 部署
 
 前置：Cloudflare 账号（免费版无需信用卡）、Node 20+。**命令在仓库根目录执行**（`wrangler.jsonc` 在根目录，Deploy 按钮也只读根目录配置）。

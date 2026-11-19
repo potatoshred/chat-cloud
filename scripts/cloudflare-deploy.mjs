@@ -41,10 +41,20 @@ const current = idPattern.exec(config)?.[1] ?? ''
 const placeholders = new Set(['', '00000000-0000-0000-0000-000000000000'])
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 
+// 允许用构建变量直接指定，跳过 API（构建令牌可能没有 D1 权限）。
+const override = process.env.D1_DATABASE_ID ?? ''
 let databaseId = isUuid(current) && !placeholders.has(current) ? current : null
+if (!databaseId && isUuid(override)) {
+  databaseId = override
+}
 
 if (!databaseId) {
-  const existing = parse(wrangler('d1', 'list', '--json')).find((db) => db?.name === databaseName)
+  let existing = null
+  try {
+    existing = parse(wrangler('d1', 'list', '--json')).find((db) => db?.name === databaseName)
+  } catch {
+    console.error('[deploy] 无法列出 D1（构建令牌可能缺少 D1 权限），尝试直接创建')
+  }
   databaseId = existing ? uuidOf(existing) : null
   if (!databaseId) {
     console.log(`[deploy] 创建 D1 数据库 ${databaseName}`)
