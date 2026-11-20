@@ -38,7 +38,7 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 1. 授权 GitHub，Cloudflare 把仓库复制到你自己的账号；
 2. 确认 Worker 名称、D1 名称，按提示填 `AUTH_PASSWORD`、`DEEPSEEK_API_KEY`（来自 `.dev.vars.example`）；登录名来自 `wrangler.jsonc` 的 `vars`，不在这里填；
 3. **Build command 保持 `pnpm build` 即可**——构建脚本会读 `WORKERS_CI=1` 自动切到边缘版；
-4. Deploy command 保持仓库里的 `deploy` 脚本：自动建表（`d1 migrations apply`）再部署。
+4. Deploy command 默认就是 `pnpm run deploy`，保持不变即可（自动建库、跑迁移，再部署）。
 
 之后每次 push 到 main，Workers Builds 会自动重新构建并部署；构建失败时线上保持上一个版本。
 
@@ -111,22 +111,24 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 如果之前把 `AUTH_USERNAME` 加成过 Secret，请先删掉它，否则会和配置里的同名变量冲突。
 
-## 部署命令必须指向建库脚本
+## 部署命令（deploy 脚本）
 
-Workers Builds 项目在创建时会**固化**「部署命令」，之后仓库里的 `package.json` 改动不会同步过去。如果日志里出现：
+Workers Builds 项目会把「部署命令」记在项目设置里。新项目默认是 `pnpm run deploy`（仓库 `package.json` 的 `deploy` 脚本，会建库、跑迁移再部署），不需要改。
+
+老项目可能还固定着创建时的 `npx wrangler deploy`，这时日志会显示：
 
 ```
 Executing user deploy command: npx wrangler deploy
 D1 binding 'DB' references database '00000000-...' which was not found
 ```
 
-说明它绕过了 `deploy` 脚本。到 Worker → Settings → Build 把**部署命令**改成：
+到 Worker → Settings → Build 把**部署命令**改成：
 
 ```
-node scripts/cloudflare-deploy.mjs
+pnpm run deploy
 ```
 
-（等同于 `pnpm run deploy`。）脚本会：按名字找 D1 → 没有就创建并把 `database_id` 写回 `wrangler.jsonc` → 执行迁移 → 部署。
+脚本会：按名字找 D1 → 没有就创建并把 `database_id` 写回 `wrangler.jsonc` → 执行迁移 → 部署。必须带 `run`：pnpm 9 会把 `pnpm deploy` 当成内置的 workspace 命令并报 `ERR_PNPM_CANNOT_DEPLOY`。
 
 如果构建令牌没有 D1 权限，也可以手动建库，并在项目里加一个构建变量 `D1_DATABASE_ID=<uuid>`，脚本会直接使用它。
 

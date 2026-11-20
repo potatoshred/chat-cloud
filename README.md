@@ -50,7 +50,7 @@
 
    登录名不在这里填：它是普通变量，来自 `wrangler.jsonc` 的 `vars.AUTH_USERNAME`（默认 `admin`），要改就直接改那一行再重新部署。
 4. **Build command** 保持 `pnpm build`（构建脚本会识别 `WORKERS_CI=1`，自动切到服务端 + 免费额度参数）。
-5. **Deploy command** 必须是 **`node scripts/cloudflare-deploy.mjs`**（或 `pnpm run deploy`）。这一栏只在项目创建时确定，之后再改仓库不会同步——不设置就会因为占位 `database_id` 报 `10181`。
+5. **Deploy command** 默认就是 `pnpm run deploy`（执行 `scripts/cloudflare-deploy.mjs`），确认一下即可。如果显示的是 `npx wrangler deploy`，改成 `pnpm run deploy`——这一栏在项目创建时固定，之后不会跟着仓库更新，保持旧值会因占位 `database_id` 报 `10181`。
 6. 点部署。脚本会：按名字找 D1 → 没有就创建并把真实 ID 写回配置 → 执行全部迁移 → 部署 Worker。
 7. 访问 `https://chat-demo.<你的子域>.workers.dev`，用 `wrangler.jsonc` 里的用户名 + 第 3 步设置的密码登录。
 
