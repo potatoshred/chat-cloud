@@ -9,6 +9,7 @@
     "dev": "rspack serve -c rspack.config.ts",
     "build": "node scripts/build.mjs",
     "type": "tsc -p tsconfig.json",
+    "test:history": "node --test scripts/history-import.test.mjs",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write .",
     "cf:build": "CHAT_SERVER_API=true CHAT_EDGE=true node scripts/build.mjs",

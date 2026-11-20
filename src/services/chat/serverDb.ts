@@ -1,9 +1,4 @@
-import {
-  retryStorage,
-  StorageError,
-  storageJson,
-  storageRequest,
-} from '../serverStorage.js'
+import { retryStorage, StorageError, storageJson, storageRequest } from '../serverStorage.js'
 import type { StoredFile } from './localDb.js'
 import type {
   CommitSummary,
@@ -217,6 +212,18 @@ export const addStagingSession = async (session: Session): Promise<void> => {
 export const addStagingSessions = async (sessions: Session[]): Promise<void> => {
   await retryStorage(async () => storageJson(`${await staging()}/sessions`, 'PUT', sessions), [400])
 }
+/** 浏览器后台线程已序列化的会话批次，直接上传，避免在页面线程再次遍历整份消息。 */
+export const addStagingSessionsJson = async (body: string): Promise<void> => {
+  await retryStorage(
+    async () =>
+      storageRequest(`${await staging()}/sessions`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      }),
+    [400]
+  )
+}
 export const saveStagingFiles = async (files: StoredFile[]): Promise<void> =>
   putFiles(files, `${await staging()}/files`, generation, true)
 export const updateStagingFileTypes = async (types: ReadonlyMap<string, string>): Promise<void> => {
@@ -234,5 +241,9 @@ export const commitStaging = async (
   uploadedFiles.clear()
   stagingId = undefined
   window.dispatchEvent(new Event('chat-history-replaced'))
-  return { sessions: state.sessions, importedCount: state.importedCount, skippedCount: state.skippedCount }
+  return {
+    sessions: state.sessions,
+    importedCount: state.importedCount,
+    skippedCount: state.skippedCount,
+  }
 }

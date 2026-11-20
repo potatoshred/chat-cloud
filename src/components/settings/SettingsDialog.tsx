@@ -16,6 +16,7 @@ import {
   clearHistory,
   exportHistory,
   importHistory,
+  type ImportProgress,
 } from '../../services/chat/backup.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
@@ -373,7 +374,7 @@ const ImportConfirm = ({
   const running = historyImport.busy
   const done = !running && historyImport.status !== null
   const status = historyImport.status
-  const progress = historyImport.progress ?? { sessions: 0, files: 0 }
+  const progress = historyImport.progress
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
@@ -405,9 +406,11 @@ const ImportConfirm = ({
           <div className={styles.importProgress} role="status" aria-live="polite">
             <div className={styles.importProgressBar} />
             <span>
-              {progress.sessions === 0 && progress.files === 0
+              {!progress || progress.phase === 'reading'
                 ? t('historyImportReading')
-                : t('historyImportProgress', progress)}
+                : progress.phase === 'finalizing'
+                  ? t('historyImportFinalizing')
+                  : t('historyImportProgress', progress)}
             </span>
           </div>
           <div className={styles.importConfirmText}>{t('historyImportRunningHint')}</div>
@@ -591,7 +594,7 @@ const useHistoryImport = () => {
   const [mode, setMode] = useState<ImportMode>('append')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<Status>(null)
-  const [progress, setProgress] = useState<{ sessions: number; files: number } | null>(null)
+  const [progress, setProgress] = useState<ImportProgress | null>(null)
   const [skippedFiles, setSkippedFiles] = useState<string[]>([])
   const [skippedSessions, setSkippedSessions] = useState<string[]>([])
   const [skippedExisting, setSkippedExisting] = useState<string[]>([])
@@ -609,7 +612,7 @@ const useHistoryImport = () => {
     setSkippedSessions([])
     setSkippedExisting([])
     setReason(null)
-    setProgress({ sessions: 0, files: 0 })
+    setProgress({ parsedSessions: 0, sessions: 0, files: 0, phase: 'reading' })
     try {
       const result = await importHistory(file, mode, setProgress)
       setStatus({

@@ -1,6 +1,7 @@
 import { Inflate } from 'fflate'
 
 const READ_CHUNK_BYTES = 256 * 1024
+const READ_AHEAD_BYTES = 1024 * 1024
 // 中央目录一次读入的上限；超过则退回逐条读取，避免异常归档撑爆内存。
 const DIRECTORY_BUFFER_LIMIT = 4 * 1024 * 1024
 // 控制每轮同步解压的工作量；输出交给调用方保存后才继续读取。
@@ -34,15 +35,58 @@ const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
   return crc >>> 0
 })
 
-const readBytes = async (file: File, start: number, length: number) => {
-  if (start < 0 || length < 0 || start + length > file.size) {
-    invalid()
+type ReadBytes = (start: number, length: number) => Promise<Uint8Array>
+
+/** 两个对齐的读取窗口，合并小条目的文件头、描述符和正文读取；内存不随归档增长。 */
+const createReader = (file: File): ReadBytes => {
+  const windows = new Map<number, Uint8Array>()
+  const direct: ReadBytes = async (start, length) => {
+    const bytes = new Uint8Array(await file.slice(start, start + length).arrayBuffer())
+    if (bytes.length !== length) {
+      invalid()
+    }
+    return bytes
   }
-  const bytes = new Uint8Array(await file.slice(start, start + length).arrayBuffer())
-  if (bytes.length !== length) {
-    invalid()
+  const block = async (start: number) => {
+    let bytes = windows.get(start)
+    if (!bytes) {
+      bytes = await direct(start, Math.min(READ_AHEAD_BYTES, file.size - start))
+      if (windows.size === 2) {
+        const oldest = windows.keys().next().value
+        if (oldest !== undefined) {
+          windows.delete(oldest)
+        }
+      }
+    }
+    windows.delete(start)
+    windows.set(start, bytes)
+    return bytes
   }
-  return bytes
+  return async (start, length) => {
+    if (start < 0 || length < 0 || start + length > file.size) {
+      invalid()
+    }
+    if (length === 0) {
+      return new Uint8Array()
+    }
+    if (length > READ_AHEAD_BYTES) {
+      return direct(start, length)
+    }
+    const first = Math.floor(start / READ_AHEAD_BYTES) * READ_AHEAD_BYTES
+    const bytes = await block(first)
+    const offset = start - first
+    if (offset + length <= bytes.length) {
+      return bytes.subarray(offset, offset + length)
+    }
+    const result = new Uint8Array(length)
+    const prefix = bytes.subarray(offset)
+    result.set(prefix)
+    result.set(
+      (await block(first + READ_AHEAD_BYTES)).subarray(0, length - prefix.length),
+      prefix.length
+    )
+    return result
+  }
 }
 
 /** ZIP64、分卷与加密文件不属于导出格式，一律拒绝。 */
@@ -87,12 +131,15 @@ type Entry = {
   offset: number
 }
 
-const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: number }> => {
+const readDirectory = async (
+  file: File,
+  readBytes: ReadBytes
+): Promise<{ entries: Entry[]; offset: number }> => {
   if (file.size < 22) {
     invalid()
   }
   const tailStart = Math.max(0, file.size - 22 - 0xffff)
-  const tail = await readBytes(file, tailStart, file.size - tailStart)
+  const tail = await readBytes(tailStart, file.size - tailStart)
   const tailView = viewOf(tail)
   let end = tail.length - 22
   while (
@@ -121,7 +168,7 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
   }
   // 中央目录通常只有几百 KB。一次性读进内存再解析，避免每个条目 3~4 次
   // Blob.slice().arrayBuffer() 往返——手机上几千次异步切片会卡住十几秒。
-  const buffered = size <= DIRECTORY_BUFFER_LIMIT ? await readBytes(file, offset, size) : null
+  const buffered = size <= DIRECTORY_BUFFER_LIMIT ? await readBytes(offset, size) : null
   const entries: Entry[] = []
   const paths = new Set<string>()
   let cursor = 0
@@ -131,7 +178,7 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     }
     const header = buffered
       ? buffered.subarray(cursor, cursor + 46)
-      : await readBytes(file, offset + cursor, 46)
+      : await readBytes(offset + cursor, 46)
     if (header.length !== 46) {
       invalid()
     }
@@ -163,7 +210,7 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     }
     const name = buffered
       ? buffered.subarray(cursor + 46, cursor + 46 + nameLength)
-      : await readBytes(file, offset + cursor + 46, nameLength)
+      : await readBytes(offset + cursor + 46, nameLength)
     const path = decodePath(name, flags)
     // 目录和同名文件也不能互相覆盖。
     const identity = path.endsWith('/') ? path.slice(0, -1) : path
@@ -173,7 +220,7 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     paths.add(identity)
     const extra = buffered
       ? buffered.subarray(cursor + 46 + nameLength, cursor + 46 + nameLength + extraLength)
-      : await readBytes(file, offset + cursor + 46 + nameLength, extraLength)
+      : await readBytes(offset + cursor + 46 + nameLength, extraLength)
     checkExtra(extra)
     entries.push({
       path,
@@ -193,11 +240,11 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
   return { entries: entries.sort((a, b) => a.offset - b.offset), offset }
 }
 
-const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
+const readEntryOffset = async (readBytes: ReadBytes, entry: Entry, boundary: number) => {
   if (entry.offset + 30 > boundary) {
     invalid()
   }
-  const view = viewOf(await readBytes(file, entry.offset, 30))
+  const view = viewOf(await readBytes(entry.offset, 30))
   const nameLength = view.getUint16(26, true)
   const extraLength = view.getUint16(28, true)
   const start = entry.offset + 30 + nameLength + extraLength
@@ -221,7 +268,7 @@ const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
       invalid()
     }
   }
-  const metadata = await readBytes(file, entry.offset + 30, nameLength + extraLength)
+  const metadata = await readBytes(entry.offset + 30, nameLength + extraLength)
   if (entry.name.some((byte, index) => byte !== metadata[index])) {
     invalid()
   }
@@ -230,7 +277,7 @@ const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
     if (end + 12 > boundary) {
       invalid()
     }
-    const descriptor = viewOf(await readBytes(file, end, Math.min(16, boundary - end)))
+    const descriptor = viewOf(await readBytes(end, Math.min(16, boundary - end)))
     const shift = descriptor.getUint32(0, true) === 0x08074b50 ? 4 : 0
     if (
       shift + 12 > descriptor.byteLength ||
@@ -255,10 +302,11 @@ export type ArchiveEntry = {
  * 调用方必须消费完当前条目的数据，再请求下一个条目。
  */
 export async function* readArchive(file: File): AsyncGenerator<ArchiveEntry> {
-  const directory = await readDirectory(file)
+  const readBytes = createReader(file)
+  const directory = await readDirectory(file, readBytes)
   for (const [index, entry] of directory.entries.entries()) {
     const boundary = directory.entries[index + 1]?.offset ?? directory.offset
-    const start = await readEntryOffset(file, entry, boundary)
+    const start = await readEntryOffset(readBytes, entry, boundary)
     if (entry.path.endsWith('/')) {
       continue
     }
@@ -272,8 +320,8 @@ export async function* readArchive(file: File): AsyncGenerator<ArchiveEntry> {
         if (written > entry.size) {
           invalid()
         }
-        for (const byte of chunk) {
-          crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff]
+        for (let index = 0; index < chunk.length; index++) {
+          crc = (crc >>> 8) ^ crcTable[(crc ^ chunk[index]) & 0xff]
         }
         if (chunk.length) {
           pending.push(chunk)
@@ -282,7 +330,6 @@ export async function* readArchive(file: File): AsyncGenerator<ArchiveEntry> {
       const inflate = entry.method === 8 ? new Inflate(append) : null
       for (let offset = 0; offset < entry.compressedSize; offset += READ_CHUNK_BYTES) {
         const chunk = await readBytes(
-          file,
           start + offset,
           Math.min(READ_CHUNK_BYTES, entry.compressedSize - offset)
         )
@@ -321,6 +368,16 @@ export const readEntry = async (entry: ArchiveEntry): Promise<Blob> => {
     parts.push(new Blob([chunk as Uint8Array<ArrayBuffer>]))
   }
   return new Blob(parts)
+}
+
+/** JSON 直接按流解码，避免为每个解压块创建 Blob 后再异步读取。 */
+export const readTextEntry = async (entry: ArchiveEntry): Promise<string> => {
+  const decoder = new TextDecoder()
+  let text = ''
+  for await (const chunk of entry.stream) {
+    text += decoder.decode(chunk, { stream: true })
+  }
+  return text + decoder.decode()
 }
 
 /** 不需要的条目也要读完，以校验大小与 CRC。 */

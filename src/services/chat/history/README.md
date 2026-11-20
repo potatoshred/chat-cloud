@@ -20,8 +20,9 @@ chat_sessions/{session_id}_files/{file_id}_{file_name}  全部图片原件
 ## 导入与替换
 
 1. 用户确认覆盖后，先读取首个条目检查格式与版本；不符合时直接失败，不中止正在生成的回答。
-2. 检查通过后停止生成，导入期间禁止修改会话。逐条解析会话并写入 IndexedDB 暂存区，按 `FILE.is_image` 保留图片身份，再读取图片原件并回填 MIME。图片按文件 ID 去重；字节识别仅补充具体 MIME，无法识别时仍按图片处理。
-3. 校验索引与会话一一对应、消息树和 ZIP 完整性后，在同一个事务中用暂存内容替换全部本地会话与附件。校验或提交失败时保留原有记录；中断遗留的暂存在下次导入前清理。
+2. 检查通过后停止生成，导入期间禁止修改会话。浏览器后台线程逐条解压、校验和转换会话；页面负责上传或写入 IndexedDB 暂存。当前批次写入期间最多预读下一批，不扩大服务端并发或批次大小。两种进度分别统计已解析与已暂存的会话；不支持后台线程时回退到分时处理。
+3. 按 `FILE.is_image` 保留图片身份，再读取图片原件并回填 MIME。图片按文件 ID 去重；字节识别仅补充具体 MIME，无法识别时仍按图片处理。
+4. 校验索引与会话一一对应、消息树和 ZIP 完整性后，原子提交暂存数据。追加模式保留现有记录，替换模式替换全部历史。校验或写入失败时先停止后台解析，再清理暂存，保留原有记录。
 
 消息树以 `id` / `parent_id` 还原，父消息 ID 必须小于子消息 ID、角色交替、根为提问。`current_message_id` 决定当前分支；其他节点默认选中 ID 最大的子消息。缺失原件的附件保留文件名和大小，不进入后续请求；有原件的导入图片在首次用于请求时上传。
 
@@ -55,7 +56,13 @@ chat_sessions/{session_id}_files/{file_id}_{file_name}  全部图片原件
 | [format.ts](./format.ts)、[schema.ts](./schema.ts)                             | 归档类型与字段校验             |
 | [toLocal.ts](./toLocal.ts)、[toArchive.ts](./toArchive.ts)                     | 归档与本地消息转换             |
 | [importArchive.ts](./importArchive.ts)、[exportArchive.ts](./exportArchive.ts) | 条目读取、暂存与归档组装       |
+| [importReader.ts](./importReader.ts) | 会话转换、批次生成与完整性校验 |
+| [importClient.ts](./importClient.ts)、[import.worker.ts](./import.worker.ts) | 后台线程通信、预读背压与错误清理 |
 | [zipReader.ts](./zipReader.ts)、[zipWriter.ts](./zipWriter.ts)                 | ZIP 读写及路径、大小、CRC 校验 |
 | [../backup.ts](../backup.ts)                                                   | 导入导出入口与串行队列         |
 
 支持单卷 ZIP32 的 STORE / DEFLATE，导出使用 STORE。ZIP64、加密、分卷及非 UTF-8 的非 ASCII 文件名不支持；条目名统一按 NFC 比较。不另设业务大小上限，但受 ZIP32 容量和浏览器资源限制，导出会生成完整下载 Blob。
+
+读取使用两个 1MiB 缓存窗口合并文件头、描述符与正文的小块读取。JSON 直接按 UTF-8 流解码，服务端模式下在后台线程序列化上传批次，避免在页面上重复处理整份消息。
+
+运行导入回归测试：`pnpm run test:history`。测试覆盖批次、中文与 emoji、缓存跨界、CRC、追加去重、超大会话、附件及中止处理，无需连接远端服务。

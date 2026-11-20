@@ -2,8 +2,10 @@ import { formatDate } from '../../utils/format.js'
 import * as db from './db.js'
 import { replaceHistory, useChatStore } from './store.js'
 import type { ImportMode, Session } from './types.js'
+import type { ImportProgress } from './history/importReader.js'
 
 export { BackupError } from './history/errors.js'
+export type { ImportProgress } from './history/importReader.js'
 
 // 导入、导出与全部删除串行处理，避免读取归档时数据被清空或两个替换事务交错。
 let backupQueue: Promise<unknown> = Promise.resolve()
@@ -54,7 +56,7 @@ export type ImportResult = {
 export const importHistory = (
   file: File,
   mode: ImportMode,
-  onProgress?: (progress: { sessions: number; files: number }) => void
+  onProgress?: (progress: ImportProgress) => void
 ): Promise<ImportResult> =>
   enqueueBackup(async () => {
     const { checkArchiveFormat, importArchive, takeSkippedFiles } = await import('./history/importArchive.js')
