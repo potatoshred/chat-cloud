@@ -126,7 +126,7 @@ D1 binding 'DB' references database '00000000-...' which was not found
 node scripts/cloudflare-deploy.mjs
 ```
 
-（等同于 `pnpm deploy`。）脚本会：按名字找 D1 → 没有就创建并把 `database_id` 写回 `wrangler.jsonc` → 执行迁移 → 部署。
+（等同于 `pnpm run deploy`。）脚本会：按名字找 D1 → 没有就创建并把 `database_id` 写回 `wrangler.jsonc` → 执行迁移 → 部署。
 
 如果构建令牌没有 D1 权限，也可以手动建库，并在项目里加一个构建变量 `D1_DATABASE_ID=<uuid>`，脚本会直接使用它。
 

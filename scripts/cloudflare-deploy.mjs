@@ -5,7 +5,7 @@
  * 2. 执行未应用的迁移；
  * 3. 部署 Worker。
  *
- * Deploy to Cloudflare 按钮/Workers Builds 会调用 `pnpm deploy`。占位 ID 不能直接用，
+ * Deploy to Cloudflare 按钮/Workers Builds 会调用 `pnpm run deploy`。占位 ID 不能直接用，
  * 而自动预置资源并非在所有流程里都会发生，所以这里自己兜底。
  */
 import { execFileSync } from 'node:child_process'
@@ -13,7 +13,11 @@ import { readFileSync, writeFileSync } from 'node:fs'
 
 const configPath = 'wrangler.jsonc'
 // 透传参数给最后的 wrangler deploy，例如 --secrets-file .secrets。
+// pnpm 9 会把分隔符 `--` 原样传进来，去掉它，否则 wrangler 会把后面的参数当成位置参数。
 const extraArgs = process.argv.slice(2)
+if (extraArgs[0] === '--') {
+  extraArgs.shift()
+}
 const wrangler = (...args) =>
   execFileSync('npx', ['--yes', 'wrangler@latest', ...args], {
     encoding: 'utf8',

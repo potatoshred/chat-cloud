@@ -49,7 +49,7 @@
    - `AUTH_PASSWORD`：登录密码，**类型选「密钥 / Secret」**，至少 14 位
    - `DEEPSEEK_API_KEY`：DeepSeek Key，**类型选「密钥 / Secret」**
 4. **Build command** 保持 `pnpm build`（构建脚本会识别 `WORKERS_CI=1`，自动切到服务端 + 免费额度参数）。
-5. **Deploy command** 必须是 **`node scripts/cloudflare-deploy.mjs`**（或 `pnpm deploy`）。这一栏只在项目创建时确定，之后再改仓库不会同步——不设置就会因为占位 `database_id` 报 `10181`。
+5. **Deploy command** 必须是 **`node scripts/cloudflare-deploy.mjs`**（或 `pnpm run deploy`）。这一栏只在项目创建时确定，之后再改仓库不会同步——不设置就会因为占位 `database_id` 报 `10181`。
 6. 点部署。脚本会：按名字找 D1 → 没有就创建并把真实 ID 写回配置 → 执行全部迁移 → 部署 Worker。
 7. 访问 `https://chat-demo.<你的子域>.workers.dev`，用第 3 步的账号密码登录。
 
@@ -72,11 +72,12 @@ cat > .secrets <<'JSON'
 JSON
 
 # 建库（没有时）、跑迁移、部署，并把密钥一并写入
-pnpm deploy -- --secrets-file .secrets
+pnpm run deploy -- --secrets-file .secrets
 rm .secrets
 ```
 
-之后更新代码只需要 `pnpm cf:build && pnpm deploy`，密钥会保留。也可以不用 `.secrets`，改为
+之后更新代码只需要 `pnpm cf:build && pnpm run deploy`，密钥会保留。
+注意要写 `pnpm run deploy`：pnpm 9（Workers Builds 默认版本）会把 `pnpm deploy` 当成内置的 workspace 部署命令并报 `ERR_PNPM_CANNOT_DEPLOY`。也可以不用 `.secrets`，改为
 `npx wrangler secret put AUTH_PASSWORD` / `npx wrangler secret put DEEPSEEK_API_KEY`。
 
 如果构建令牌或本机账号没有 D1 权限，先手动建库，把 ID 填进 `wrangler.jsonc` 的 `database_id`，或在部署时提供 `D1_DATABASE_ID=<uuid>`。
@@ -105,7 +106,7 @@ rm .secrets
 
 用按钮创建的副本：向 Cloudflare 复制出的那个仓库的 `main` push，Workers Builds 会自动重建部署；构建失败时线上保持上一个版本，D1 数据不受影响。
 
-手动部署的：拉代码后重跑 `pnpm cf:build && pnpm deploy`。迁移是增量的，只执行 `cloudflare/migrations/` 里没跑过的文件；重复执行也不会清数据。
+手动部署的：拉代码后重跑 `pnpm cf:build && pnpm run deploy`。迁移是增量的，只执行 `cloudflare/migrations/` 里没跑过的文件；重复执行也不会清数据。
 
 ### 优缺点
 
