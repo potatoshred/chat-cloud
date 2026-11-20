@@ -11,6 +11,8 @@ RUN pnpm install --frozen-lockfile --prod=false
 
 COPY rspack.config.ts tsconfig.json .oxlintrc.json LICENSE ./
 COPY src ./src
+# 构建入口 scripts/build.mjs：按环境选择目标，容器此处为 CHAT_SERVER_API=true。
+COPY scripts ./scripts
 RUN CHAT_SERVER_API=true pnpm build
 
 FROM node:24-alpine AS auth
