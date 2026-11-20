@@ -36,9 +36,9 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 点击后的步骤：
 
 1. 授权 GitHub，Cloudflare 把仓库复制到你自己的账号；
-2. 确认 Worker 名称、D1 名称，按提示填 `AUTH_PASSWORD`、`DEEPSEEK_API_KEY`（来自 `.dev.vars.example`）；登录名来自 `wrangler.jsonc` 的 `vars`，不在这里填；
-3. **Build command 保持 `pnpm build` 即可**——构建脚本会读 `WORKERS_CI=1` 自动切到边缘版；
-4. Deploy command 默认就是 `pnpm run deploy`，保持不变即可（自动建库、跑迁移，再部署）。
+2. 确认 Worker 名称、D1 名称，按提示填 `AUTH_PASSWORD`、`DEEPSEEK_API_KEY`（来自 `.dev.vars.example`）；登录名来自 `wrangler.jsonc` 的 `vars`，不在这里填。
+
+构建、部署命令保持默认即可：构建脚本会读 `WORKERS_CI=1` 切到边缘版，部署脚本会建库、跑迁移再发布。
 
 之后每次 push 到 main，Workers Builds 会自动重新构建并部署；构建失败时线上保持上一个版本。
 
@@ -111,27 +111,6 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 如果之前把 `AUTH_USERNAME` 加成过 Secret，请先删掉它，否则会和配置里的同名变量冲突。
 
-## 部署命令（deploy 脚本）
-
-Workers Builds 项目会把「部署命令」记在项目设置里。新项目默认是 `pnpm run deploy`（仓库 `package.json` 的 `deploy` 脚本，会建库、跑迁移再部署），不需要改。
-
-老项目可能还固定着创建时的 `npx wrangler deploy`，这时日志会显示：
-
-```
-Executing user deploy command: npx wrangler deploy
-D1 binding 'DB' references database '00000000-...' which was not found
-```
-
-到 Worker → Settings → Build 把**部署命令**改成：
-
-```
-pnpm run deploy
-```
-
-脚本会：按名字找 D1 → 没有就创建并把 `database_id` 写回 `wrangler.jsonc` → 执行迁移 → 部署。必须带 `run`：pnpm 9 会把 `pnpm deploy` 当成内置的 workspace 命令并报 `ERR_PNPM_CANNOT_DEPLOY`。
-
-如果构建令牌没有 D1 权限，也可以手动建库，并在项目里加一个构建变量 `D1_DATABASE_ID=<uuid>`，脚本会直接使用它。
-
 ## 部署
 
 前置：Cloudflare 账号（免费版无需信用卡）、Node 20+。**命令在仓库根目录执行**（`wrangler.jsonc` 在根目录，Deploy 按钮也只读根目录配置）。
@@ -167,6 +146,7 @@ npx wrangler deploy
 - **登录限速只在单个 isolate 内生效**：没有 KV/Durable Objects，尽力而为。
 - **大会话可能 413**：单个会话 JSON 上限约 1.8MB；超长上下文需要拆表（后续工作）。
 - **10ms CPU**：免费版对每请求的 CPU 有硬上限，历史规模很大时 `state`/搜索可能触发 1102；额度是硬停，不是限速。
+- **旧项目的部署命令**：创建于早期版本的项目可能仍固定为 `npx wrangler deploy`，会因占位 `database_id` 报 `10181`。到 Worker → Settings → Build 把它改成 `pnpm run deploy` 一次即可（必须带 `run`，pnpm 9 会把 `pnpm deploy` 当内置命令）。
 
 ## 本地测试
 
