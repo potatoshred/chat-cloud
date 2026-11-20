@@ -39,20 +39,14 @@
 
 ### 方式 A：一键部署按钮
 
-点顶部的 **Deploy to Cloudflare** 按钮，或打开
-<https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo>。
+点顶部的 **Deploy to Cloudflare** 按钮（或打开
+<https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo>），授权后**只需要改两处**：
 
-1. 授权 GitHub。Cloudflare 会把仓库**复制到你自己的账号**（不是 fork），后续自动更新发生在这份副本里。
-2. 确认 Worker 名称（默认 `chat-demo`）和 D1 名称（`deepseek-chat`）。
-3. 填写两个密钥（按钮只会提示这两个）：
-   - `AUTH_PASSWORD`：登录密码，至少 14 位
-   - `DEEPSEEK_API_KEY`：DeepSeek Key
+1. **两个密钥**：`AUTH_PASSWORD`（至少 14 位）、`DEEPSEEK_API_KEY`，类型都选「密钥」。
+2. **登录名（可选）**：默认 `admin`；想换就改 `wrangler.jsonc` 里的 `vars.AUTH_USERNAME` 再部署。
 
-   登录名不在这里填：它是普通变量，来自 `wrangler.jsonc` 的 `vars.AUTH_USERNAME`（默认 `admin`），要改就直接改那一行再重新部署。
-4. 点部署。构建和部署命令用默认值即可，脚本会按名字找 D1（没有就创建）、执行迁移，然后部署 Worker。
-5. 访问 `https://chat-demo.<你的子域>.workers.dev`，用 `wrangler.jsonc` 里的用户名 + 第 3 步设置的密码登录。
-
-> 第一次部署若提示 `The following required secrets have not been set`，说明两个 Secret 还没加或没重新部署——加上后点「重试部署」即可。
+Worker 名称、D1、构建与部署命令、建表都走默认值，不用动，直接点部署。完成后访问
+`https://chat-demo.<你的子域>.workers.dev`，用上面的用户名和密码登录。
 
 ### 方式 B：命令行部署
 
@@ -161,8 +155,6 @@ Pages 的 advanced mode 可以把同一个 Worker 作为 `_worker.js` 运行。*
    - `AUTH_USERNAME`（普通变量）
    - `AUTH_PASSWORD`、`DEEPSEEK_API_KEY`（类型选**密钥**）
 6. 部署完成后访问 `https://<项目名>.pages.dev`，用配置的账号密码登录。
-
-想先在本地确认产物，可以跑 `pnpm cf:build:pages`，然后检查 `dist/_worker.js` 是否存在。
 
 > Pages 项目**不会读取**根目录的 `wrangler.jsonc`，绑定、变量、密钥都在项目设置里配；改用自定义域名时也在这里加。
 > 预览部署（非生产分支）默认也用同一套绑定，会读写正式 D1；不需要时在项目里关掉预览部署。
