@@ -245,6 +245,15 @@ function validateSession(session, id) {
 const CITATION = /\s*\[citation:\d+\]/g
 const cleanText = (text) => (typeof text === 'string' ? text.replace(CITATION, '') : '')
 
+/** 会话里是否有附件；类型回写按这个标记过滤，避免整库重写 JSON。 */
+function hasFiles(session) {
+  return session.messages.some(
+    (message) => message?.role === 'user' && Array.isArray(message.files) && message.files.length > 0
+  )
+    ? 1
+    : 0
+}
+
 function extractSearchDocs(session) {
   const docs = []
   const title = typeof session.title === 'string' ? session.title : ''
@@ -758,6 +767,10 @@ async function handleImports(request, db, parts, method) {
     if (!object(types) || Object.values(types).some((value) => typeof value !== 'string')) {
       fail(400, '附件类型无效。')
     }
+    if (Object.keys(types).length === 0) {
+      // 没有可回写的类型（归档里没有图片）就不必扫描暂存表。
+      return json({ ok: true, applied: 0 })
+    }
     // 分页处理：一次读取所有会话会撑爆 D1 的单次请求/内存，失败还会连累整个导入。
     // 每页 50 个会话（1 次读 + 1 次 batch）；免费版 50 次查询/调用，留出余量最多 20 页 = 1000 个会话。
     let cursor = ''
@@ -767,7 +780,7 @@ async function handleImports(request, db, parts, method) {
       for (let page = 0; page < 20 && queries < 46; page += 1) {
         const rows = await all(
           db,
-          'SELECT id,json FROM staged_sessions WHERE owner=? AND id>? ORDER BY id LIMIT 50',
+          'SELECT id,json FROM staged_sessions WHERE owner=? AND id>? AND has_files=1 ORDER BY id LIMIT 50',
           id,
           cursor
         )
@@ -822,7 +835,9 @@ async function handleImports(request, db, parts, method) {
     for (const session of sessions) {
       validateSession(session, session?.id)
       statements.push(
-        db.prepare('INSERT OR REPLACE INTO staged_sessions VALUES (?,?,?)').bind(id, session.id, JSON.stringify(session)),
+        db
+          .prepare('INSERT OR REPLACE INTO staged_sessions (owner,id,json,has_files) VALUES (?,?,?,?)')
+          .bind(id, session.id, JSON.stringify(session), hasFiles(session)),
         db.prepare('DELETE FROM staged_docs WHERE owner=? AND session_id=?').bind(id, session.id)
       )
       const updatedAt = Number.isFinite(session.updatedAt) ? session.updatedAt : 0
@@ -843,7 +858,9 @@ async function handleImports(request, db, parts, method) {
       const session = validateSession(await readBody(request, SESSION_LIMIT), entryId)
       const updatedAt = Number.isFinite(session.updatedAt) ? session.updatedAt : 0
       await db.batch([
-        db.prepare('INSERT OR REPLACE INTO staged_sessions VALUES (?,?,?)').bind(id, entryId, JSON.stringify(session)),
+        db
+          .prepare('INSERT OR REPLACE INTO staged_sessions (owner,id,json,has_files) VALUES (?,?,?,?)')
+          .bind(id, entryId, JSON.stringify(session), hasFiles(session)),
         db.prepare('DELETE FROM staged_docs WHERE owner=? AND session_id=?').bind(id, entryId),
         ...extractSearchDocs(session).map((doc) =>
           db

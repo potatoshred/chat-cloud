@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- 搜索索引：写入会话时按现有规则抽取文本，查询用 instr() 匹配（D1 的 LIKE 模式上限 50 字节）。
+-- WITHOUT ROWID：主键即数据，每行只写一次（普通表要写"表 + 主键索引"两次）。
+-- 主键以 session_id 开头，按会话删除/查询都能走前缀，不需要额外索引。
 CREATE TABLE IF NOT EXISTS search_docs (
   session_id TEXT NOT NULL,
   message_id TEXT NOT NULL,
@@ -26,8 +28,7 @@ CREATE TABLE IF NOT EXISTS search_docs (
   text       TEXT NOT NULL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, role, message_id)
-);
-CREATE INDEX IF NOT EXISTS search_docs_session ON search_docs (session_id);
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS files (
   id    TEXT PRIMARY KEY,
@@ -53,9 +54,11 @@ CREATE TABLE IF NOT EXISTS imports (
 );
 
 CREATE TABLE IF NOT EXISTS staged_sessions (
-  owner TEXT NOT NULL,
-  id    TEXT NOT NULL,
-  json  TEXT NOT NULL,
+  owner     TEXT NOT NULL,
+  id        TEXT NOT NULL,
+  json      TEXT NOT NULL,
+  -- 该会话是否带附件：类型回写只处理这些会话，避免整库重写 JSON。
+  has_files INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (owner, id)
 );
 
@@ -68,7 +71,7 @@ CREATE TABLE IF NOT EXISTS staged_docs (
   text       TEXT NOT NULL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (owner, session_id, role, message_id)
-);
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS staged_files (
   owner TEXT NOT NULL,

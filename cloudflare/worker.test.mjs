@@ -318,19 +318,39 @@ test('import staging commits in append mode', async () => {
   assert.equal(found.total, 2)
 })
 
-test('types update pages through large imports', async () => {
+test('types update only rewrites chats that carry attachments', async () => {
   const { env } = fixture()
   const cookie = await login(env)
   const created = await (await call(env, '/data/imports', { method: 'POST', cookie })).json()
   const staging = `/data/imports/${created.id}`
   const sessions = Array.from({ length: 12 }, (_, index) => sessionOf(`p${index}`, `批量 ${index}`))
+  sessions[0].messages[0].files = [
+    { id: 'img1', serverId: null, name: 'a.png', size: 10, isImage: true, mimeType: '' },
+  ]
   assert.equal(
     (await call(env, `${staging}/sessions`, { method: 'PUT', cookie, body: sessions })).status,
     200
   )
-  const updated = await call(env, `${staging}/types`, { method: 'PATCH', cookie, body: {} })
+
+  // 空映射直接返回，不扫暂存表。
+  const empty = await call(env, `${staging}/types`, { method: 'PATCH', cookie, body: {} })
+  assert.equal(empty.status, 200)
+  assert.equal((await empty.json()).applied, 0)
+
+  // 只有带附件的那一条会话需要重写 JSON。
+  const updated = await call(env, `${staging}/types`, {
+    method: 'PATCH',
+    cookie,
+    body: { img1: 'image/png' },
+  })
   assert.equal(updated.status, 200)
-  assert.equal((await updated.json()).applied, 12)
+  assert.equal((await updated.json()).applied, 1)
+
+  await call(env, `${staging}/commit`, { method: 'POST', cookie, body: { mode: 'append' } })
+  const session = await (await call(env, '/data/sessions/p0', { cookie })).json()
+  assert.equal(session.session.messages[0].files[0].mimeType, 'image/png')
+  const plain = await (await call(env, '/data/sessions/p1', { cookie })).json()
+  assert.equal(plain.session.messages[0].files.length, 0)
 })
 
 test('replace import swaps data and rebuilds the search index', async () => {
