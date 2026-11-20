@@ -15,7 +15,7 @@
 | 导入 | 12MB/批 | **0.5MB/批、3 条/批**；>1.9MB 的附件跳过 |
 | 限额 | 无 | 10 万请求/天、10ms CPU、D1 500MB/库、10 万行写/天 |
 | 同步 | 30 秒轮询 + 空闲暂停 | **不轮询**：只在打开、回到页面、回复结束后同步 |
-| 用量 | 余额 + 24h 日志 | **只有余额**（24h 统计要扫全部消息，D1 读额度不划算） |
+| 用量 | 余额 + 24h 日志 | **只有余额**（24h 统计需要扫描全部消息，D1 读额度成本较高） |
 
 ## 为什么不用 Pages
 
@@ -36,7 +36,7 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 点击后只需要处理两处：
 
 - 填 `AUTH_PASSWORD`、`DEEPSEEK_API_KEY` 两个密钥（来自 `.dev.vars.example`）；
-- 想换登录名就改 `wrangler.jsonc` 的 `vars.AUTH_USERNAME`（默认 `admin`）。
+- 如需修改登录名，请调整 `wrangler.jsonc` 中的 `vars.AUTH_USERNAME`（默认 `admin`）。
 
 Worker/D1 名称、构建与部署命令、建表都用默认值；部署脚本会自己建库并跑迁移。
 
