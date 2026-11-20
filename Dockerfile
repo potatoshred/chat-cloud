@@ -27,8 +27,8 @@ CMD ["node", "server.mjs"]
 
 FROM nginx:stable-alpine AS runtime
 
-LABEL org.opencontainers.image.title="DeepSeek chat-demo" \
-      org.opencontainers.image.source="https://github.com/deepseek-ai/chat-demo" \
+LABEL org.opencontainers.image.title="mychat" \
+      org.opencontainers.image.source="https://github.com/potatoshred/mychat" \
       org.opencontainers.image.licenses="MIT"
 
 COPY deploy/nginx.conf /etc/nginx/nginx.conf

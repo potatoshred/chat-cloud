@@ -1,6 +1,6 @@
 {
   // 直接部署到 https://<name>.<account>.workers.dev；不需要 Pages。
-  "name": "chat-demo",
+  "name": "mychat",
   "main": "cloudflare/worker.mjs",
   "compatibility_date": "2026-11-01",
   // 登录用户名不敏感，随代码走；改这里即可。

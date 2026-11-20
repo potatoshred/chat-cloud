@@ -2,7 +2,18 @@
 
 基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 改造的个人聊天应用。前端为纯静态页面，服务端负责登录鉴权、数据同步与 DeepSeek 请求转发。由于服务端依赖较少，同一份代码可部署在 Cloudflare 免费额度内，也可通过 Docker 自建部署。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/mychat)
+
+## 为什么要改造原项目
+
+原版 `deepseek-ai/chat-demo` 是演示性质的纯前端页面：在网页里填写 API Key、浏览器直连上游接口、数据只保存在 IndexedDB。由此带来几个现实问题：
+
+- **API Key 放在浏览器**：Key 会出现在前端代码和网络请求中，不适合长期使用或公开部署；
+- **数据绑在单台设备**：换设备、换浏览器或清理站点数据后，聊天记录与附件都会丢失；
+- **没有登录和服务端存储**：页面一旦公开，任何人都能访问，也无法在多个设备间同步；
+- **额度受制于官方网页版**：官方聊天有每日使用限制，而自己填 Key 直连又必须承担 Key 泄露的风险。
+
+本项目保留了原版的界面与交互（官网同款体验），把鉴权、数据存储和 API 转发放到服务端，并支持 Cloudflare 免费额度或 Docker 自建。因此既能随时随地使用，也不受官网网页版的每日额度限制。
 
 ## 项目特性
 
@@ -45,14 +56,14 @@
 
 ### 方式 A：通过按钮一键部署
 
-点击页面顶部的 **Deploy to Cloudflare** 按钮（或直接打开 <https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo>）。授权 GitHub 后，Cloudflare 会将仓库复制到你的账号下，仅需配置以下两项：
+点击页面顶部的 **Deploy to Cloudflare** 按钮（或直接打开 <https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/mychat>）。授权 GitHub 后，Cloudflare 会将仓库复制到你的账号下，仅需配置以下两项：
 
 1. **填写两个密钥**：`AUTH_PASSWORD`（登录密码，至少 14 位）与 `DEEPSEEK_API_KEY`，类型均选择「密钥（Secret）」。
 2. **修改登录名（可选）**：默认值为 `admin`。如需修改，在新仓库的 `wrangler.jsonc` 中调整 `vars.AUTH_USERNAME` 并重新部署。
 
-> 项目名称默认为 `chat-demo`。如该 GitHub 账号下已存在同名仓库（例如源仓库本身），表单会提示「已存在具有该名称的存储库」，可改用其他名称（如 `chat-cf`）。D1 名称保持默认的 `deepseek-chat`，且须与 `wrangler.jsonc` 中的 `database_name` 一致，否则部署脚本会创建新的数据库。
+> 项目名称默认为 `mychat`。如该 GitHub 账号下已存在同名仓库（例如源仓库本身），表单会提示「已存在具有该名称的存储库」，可改用其他名称（如 `mychat-cf`）。D1 名称保持默认的 `deepseek-chat`，且须与 `wrangler.jsonc` 中的 `database_name` 一致，否则部署脚本会创建新的数据库。
 
-其余配置（Worker 名称、D1 数据库、构建与部署命令、建表迁移）保持默认值，直接部署即可。完成后访问 `https://<项目名>.<你的子域>.workers.dev`（未修改项目名时为 `chat-demo`），使用上述账号密码登录。
+其余配置（Worker 名称、D1 数据库、构建与部署命令、建表迁移）保持默认值，直接部署即可。完成后访问 `https://<项目名>.<你的子域>.workers.dev`（未修改项目名时为 `mychat`），使用上述账号密码登录。
 
 ### 方式 B：在本地用命令行部署
 
@@ -204,8 +215,8 @@ rm .secrets
 准备 Docker 与 Docker Compose：
 
 ```sh
-git clone https://github.com/potatoshred/chat-demo.git
-cd chat-demo
+git clone https://github.com/potatoshred/mychat.git
+cd mychat
 cp .env.example .env
 chmod 600 .env
 ```
