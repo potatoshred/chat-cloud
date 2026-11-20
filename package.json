@@ -1,5 +1,5 @@
 {
-  "name": "mychat",
+  "name": "chat-cloud",
   "version": "0.1.2",
   "description": "基于 DeepSeek API 的静态聊天示例。",
   "license": "MIT",

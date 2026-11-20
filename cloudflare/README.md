@@ -31,7 +31,7 @@
 
 Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 账号 → 读取**根目录**的 `wrangler.jsonc` → 自动创建 D1 并回填 `database_id` → 用 Workers Builds 构建并部署。配置放在子目录时，Cloudflare 会把这个仓库当成「纯静态资源」，因而无法添加运行时变量和密钥。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/mychat)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-cloud)
 
 点击后只需要处理两处：
 

@@ -27,8 +27,8 @@ CMD ["node", "server.mjs"]
 
 FROM nginx:stable-alpine AS runtime
 
-LABEL org.opencontainers.image.title="mychat" \
-      org.opencontainers.image.source="https://github.com/potatoshred/mychat" \
+LABEL org.opencontainers.image.title="chat-cloud" \
+      org.opencontainers.image.source="https://github.com/potatoshred/chat-cloud" \
       org.opencontainers.image.licenses="MIT"
 
 COPY deploy/nginx.conf /etc/nginx/nginx.conf

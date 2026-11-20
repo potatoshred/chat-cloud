@@ -2,7 +2,7 @@
 
 基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 改造的个人聊天应用。前端为纯静态页面，服务端负责登录鉴权、数据同步与 DeepSeek 请求转发。由于服务端依赖较少，同一份代码可部署在 Cloudflare 免费额度内，也可通过 Docker 自建部署。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/mychat)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-cloud)
 
 ## 为什么要改造原项目
 
@@ -56,14 +56,14 @@
 
 ### 方式 A：通过按钮一键部署
 
-点击页面顶部的 **Deploy to Cloudflare** 按钮（或直接打开 <https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/mychat>）。授权 GitHub 后，Cloudflare 会将仓库复制到你的账号下，仅需配置以下两项：
+点击页面顶部的 **Deploy to Cloudflare** 按钮（或直接打开 <https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-cloud>）。授权 GitHub 后，Cloudflare 会将仓库复制到你的账号下，仅需配置以下两项：
 
 1. **填写两个密钥**：`AUTH_PASSWORD`（登录密码，至少 14 位）与 `DEEPSEEK_API_KEY`，类型均选择「密钥（Secret）」。
 2. **修改登录名（可选）**：默认值为 `admin`。如需修改，在新仓库的 `wrangler.jsonc` 中调整 `vars.AUTH_USERNAME` 并重新部署。
 
-> 项目名称默认为 `mychat`。如该 GitHub 账号下已存在同名仓库（例如源仓库本身），表单会提示「已存在具有该名称的存储库」，可改用其他名称（如 `mychat-cf`）。D1 名称保持默认的 `deepseek-chat`，且须与 `wrangler.jsonc` 中的 `database_name` 一致，否则部署脚本会创建新的数据库。
+> 项目名称默认为 `chat-cloud`。如该 GitHub 账号下已存在同名仓库（例如源仓库本身），表单会提示「已存在具有该名称的存储库」，可改用其他名称（如 `chat-cloud-cf`）。D1 名称保持默认的 `deepseek-chat`，且须与 `wrangler.jsonc` 中的 `database_name` 一致，否则部署脚本会创建新的数据库。
 
-其余配置（Worker 名称、D1 数据库、构建与部署命令、建表迁移）保持默认值，直接部署即可。完成后访问 `https://<项目名>.<你的子域>.workers.dev`（未修改项目名时为 `mychat`），使用上述账号密码登录。
+其余配置（Worker 名称、D1 数据库、构建与部署命令、建表迁移）保持默认值，直接部署即可。完成后访问 `https://<项目名>.<你的子域>.workers.dev`（未修改项目名时为 `chat-cloud`），使用上述账号密码登录。
 
 ### 方式 B：在本地用命令行部署
 
@@ -215,8 +215,8 @@ rm .secrets
 准备 Docker 与 Docker Compose：
 
 ```sh
-git clone https://github.com/potatoshred/mychat.git
-cd mychat
+git clone https://github.com/potatoshred/chat-cloud.git
+cd chat-cloud
 cp .env.example .env
 chmod 600 .env
 ```
