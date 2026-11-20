@@ -143,6 +143,17 @@ rm .secrets
 
 Pages 的 advanced mode 可以把同一个 Worker 作为 `_worker.js` 运行。**一键按钮不支持 Pages**，需要手动建项目；静态资源和 API 走同一个 Function。
 
+### 先跑 Workers，再切 Pages（推荐路径）
+
+Pages 的首次配置比一键按钮麻烦。最省事的做法是**先用 Workers 把数据跑起来**，再切到 Pages——两者共用同一个 D1，不需要搬数据：
+
+1. 按上一节用按钮部署 Workers，D1、密钥、表结构都会就绪；
+2. 按下面的步骤建 Pages 项目，Bindings 里选**同一个** `deepseek-chat`；
+3. 在 Pages 里重新填 `AUTH_USERNAME` 和两个密钥（Secrets 属于各自的 Worker/Pages 项目，不会自动共享）；
+4. 打开 `pages.dev` 验证登录和聊天，确认无误后可以停用或删除 Worker——**删除 Worker 不会删 D1**。
+
+迁移期间两边可以同时在线、读写同一份数据；建议只留一个作为日常入口，避免两个页面同时编辑触发 409。
+
 ### 步骤
 
 1. 若还没有数据库：控制台 → **Storage & Databases → D1 → Create**，名字填 `deepseek-chat`。
