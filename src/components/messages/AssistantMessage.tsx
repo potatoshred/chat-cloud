@@ -153,7 +153,7 @@ export const AssistantMessage = memo(function AssistantMessage({
       {streaming ? null : (
         <div className={styles.bottom}>
           <BranchSwitcher versions={versions} disabled={busy} onSelect={onSelectVersion} />
-          <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
+          <div className={clsx(styles.actions, styles.autoHide, isLast && styles.alwaysShow)}>
             {copyText ? <CopyButton text={copyText} /> : null}
             {responseText && !refused ? (
               <ReadAloudButton messageId={message.id} text={responseText} />
@@ -170,7 +170,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             />
           </div>
           {firstTokenSeconds !== null || tokensPerSecond !== null ? (
-            <span className={styles.metrics}>
+            <span className={clsx(styles.metrics, styles.autoHide, isLast && styles.alwaysShow)}>
               {firstTokenSeconds !== null ? (
                 <span>{t('messageFirstToken', { value: `${firstTokenSeconds.toFixed(1)}s` })}</span>
               ) : null}

@@ -1,8 +1,8 @@
 .message {
   position: relative;
 
-  &:hover .actions,
-  &:focus-within .actions {
+  &:hover .autoHide,
+  &:focus-within .autoHide {
     opacity: 1;
   }
 
@@ -96,6 +96,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.autoHide {
   opacity: 0;
   transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
 }
