@@ -192,6 +192,7 @@ export const en = {
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
   historyImportRunningHint: 'Writing to the server — keep this window open.',
+  historyImportReading: 'Reading the archive…',
   historyImportProgress: 'Importing: {sessions} chats, {files} attachments',
   historyImportSkippedExistingTitle: 'Skipped {count} chats that already exist (append mode):',
   historyImportSkippedSessionsTitle: 'Skipped {count} chats (each over the 2 MB row limit):',

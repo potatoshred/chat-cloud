@@ -404,7 +404,11 @@ const ImportConfirm = ({
         <div className={styles.importRunning}>
           <div className={styles.importProgress} role="status" aria-live="polite">
             <div className={styles.importProgressBar} />
-            <span>{t('historyImportProgress', progress)}</span>
+            <span>
+              {progress.sessions === 0 && progress.files === 0
+                ? t('historyImportReading')
+                : t('historyImportProgress', progress)}
+            </span>
           </div>
           <div className={styles.importConfirmText}>{t('historyImportRunningHint')}</div>
         </div>

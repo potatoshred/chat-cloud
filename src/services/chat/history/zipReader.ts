@@ -1,6 +1,8 @@
 import { Inflate } from 'fflate'
 
 const READ_CHUNK_BYTES = 256 * 1024
+// 中央目录一次读入的上限；超过则退回逐条读取，避免异常归档撑爆内存。
+const DIRECTORY_BUFFER_LIMIT = 4 * 1024 * 1024
 // 控制每轮同步解压的工作量；输出交给调用方保存后才继续读取。
 const INFLATE_CHUNK_BYTES = 8 * 1024
 
@@ -117,6 +119,9 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
   ) {
     invalid()
   }
+  // 中央目录通常只有几百 KB。一次性读进内存再解析，避免每个条目 3~4 次
+  // Blob.slice().arrayBuffer() 往返——手机上几千次异步切片会卡住十几秒。
+  const buffered = size <= DIRECTORY_BUFFER_LIMIT ? await readBytes(file, offset, size) : null
   const entries: Entry[] = []
   const paths = new Set<string>()
   let cursor = 0
@@ -124,7 +129,13 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     if (cursor + 46 > size) {
       invalid()
     }
-    const view = viewOf(await readBytes(file, offset + cursor, 46))
+    const header = buffered
+      ? buffered.subarray(cursor, cursor + 46)
+      : await readBytes(file, offset + cursor, 46)
+    if (header.length !== 46) {
+      invalid()
+    }
+    const view = viewOf(header)
     if (view.getUint32(0, true) !== 0x02014b50) {
       invalid()
     }
@@ -150,7 +161,9 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     ) {
       invalid()
     }
-    const name = await readBytes(file, offset + cursor + 46, nameLength)
+    const name = buffered
+      ? buffered.subarray(cursor + 46, cursor + 46 + nameLength)
+      : await readBytes(file, offset + cursor + 46, nameLength)
     const path = decodePath(name, flags)
     // 目录和同名文件也不能互相覆盖。
     const identity = path.endsWith('/') ? path.slice(0, -1) : path
@@ -158,7 +171,10 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
       invalid()
     }
     paths.add(identity)
-    checkExtra(await readBytes(file, offset + cursor + 46 + nameLength, extraLength))
+    const extra = buffered
+      ? buffered.subarray(cursor + 46 + nameLength, cursor + 46 + nameLength + extraLength)
+      : await readBytes(file, offset + cursor + 46 + nameLength, extraLength)
+    checkExtra(extra)
     entries.push({
       path,
       name,
