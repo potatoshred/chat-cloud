@@ -12,6 +12,8 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 
 const configPath = 'wrangler.jsonc'
+// 透传参数给最后的 wrangler deploy，例如 --secrets-file .secrets。
+const extraArgs = process.argv.slice(2)
 const wrangler = (...args) =>
   execFileSync('npx', ['--yes', 'wrangler@latest', ...args], {
     encoding: 'utf8',
@@ -84,4 +86,4 @@ if (!databaseId) {
 }
 
 wrangler('d1', 'migrations', 'apply', 'DB', '--remote')
-wrangler('deploy')
+wrangler('deploy', ...extraArgs)
