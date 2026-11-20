@@ -176,6 +176,10 @@ export const zh = {
   historyImportConfirmDescriptionReplace: SERVER_API
     ? '导入会覆盖服务端所有对话及草稿，所有设备都会受影响。是否确认？'
     : '导入会覆盖当前所有对话及草稿。是否确认？',
+  historyImportProgress: '正在导入：{sessions} 个会话、{files} 个附件',
+  historyImportReading: '正在读取归档…',
+  historyImportRunningHint: '正在写入服务端，请保持此窗口打开。',
+  historyImportFailedReason: '失败原因：{reason}',
   historyImportConfirmReplace: '确认覆盖导入',
   historyImportDescription: SERVER_API
     ? '历史保存在服务端，各设备共享。默认追加新对话、保留现有数据，也可选择覆盖全部。支持 DeepSeek 导出的 ZIP。'

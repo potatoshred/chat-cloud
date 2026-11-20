@@ -31,6 +31,9 @@ declare const styles: {
   readonly "confirm": string;
   readonly "cellButton": string;
   readonly "mobileConfirm": string;
+  readonly "importRunning": string;
+  readonly "importProgress": string;
+  readonly "importProgressBar": string;
   readonly "importConfirm": string;
   readonly "importConfirmText": string;
   readonly "importModeOptions": string;

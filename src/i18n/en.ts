@@ -185,6 +185,10 @@ export const en = {
   historyImportConfirmDescriptionReplace: SERVER_API
     ? 'This replaces all server chats and drafts on every device. Continue?'
     : 'This replaces all your current chats and drafts. Continue?',
+  historyImportProgress: 'Importing: {sessions} chats, {files} attachments',
+  historyImportReading: 'Reading the archive…',
+  historyImportRunningHint: 'Writing to the server — keep this window open.',
+  historyImportFailedReason: 'Reason: {reason}',
   historyImportConfirmReplace: 'Replace and import',
   historyImportDescription: SERVER_API
     ? 'History is stored on the server and shared across devices. By default new chats are appended and existing data is kept; replacing all is also available. Supports DeepSeek ZIP files.'

@@ -43,6 +43,9 @@ const imageType = (bytes: Uint8Array): string => {
   return ''
 }
 
+/** 导入进度：已写入暂存的会话数与附件数。 */
+export type ImportProgress = { sessions: number; files: number }
+
 const readJson = async (entry: ArchiveEntry): Promise<unknown> => {
   const text = await (await readEntry(entry)).text()
   try {
@@ -80,7 +83,10 @@ export const checkArchiveFormat = async (file: File): Promise<void> => {
  * 会话读完立即暂存，只保留图片路径映射；图片全部读完后逐会话回填 MIME，不改变图片身份。
  * 写入导入暂存存储；调用方负责先清空暂存，成功后替换正式数据，失败时清理暂存。
  */
-export const importArchive = async (file: File): Promise<void> => {
+export const importArchive = async (
+  file: File,
+  onProgress?: (progress: ImportProgress) => void
+): Promise<void> => {
   if (!(await isZipFile(file))) {
     fail('backupUnrecognized')
   }
@@ -88,6 +94,9 @@ export const importArchive = async (file: File): Promise<void> => {
   const images = new Map<string, string>()
   /** 已保存的原件：文件 ID → MIME。同一图片出现在多个会话目录时只保存一次。 */
   const stored = new Map<string, string>()
+  let stagedSessions = 0
+  let stagedFiles = 0
+  const report = () => onProgress?.({ sessions: stagedSessions, files: stagedFiles })
   let manifest = false
   let index: SessionIndexEntry[] | undefined
   let currentSessionId: string | undefined
@@ -106,16 +115,20 @@ export const importArchive = async (file: File): Promise<void> => {
       return
     }
     await db.addStagingSessions(pendingSessions)
+    stagedSessions += pendingSessions.length
     pendingSessions = []
     pendingSessionBytes = 0
+    report()
   }
   const flushFiles = async () => {
     if (pendingFiles.length === 0) {
       return
     }
     await db.saveStagingFiles(pendingFiles)
+    stagedFiles += pendingFiles.length
     pendingFiles = []
     pendingFileBytes = 0
+    report()
   }
 
   const saveImage = async (entry: ArchiveEntry, id: string) => {

@@ -353,48 +353,85 @@ const ImportConfirm = ({
   const t = useTranslate()
   const { mode, setMode } = historyImport
   const replace = mode === 'replace'
+  const running = historyImport.busy
+  const done = !running && historyImport.status !== null
+  const status = historyImport.status
+  const progress = historyImport.progress ?? { sessions: 0, files: 0 }
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
       className={styles.importConfirm}
-      onClose={historyImport.cancel}
+      onClose={running ? () => {} : historyImport.close}
       footer={
-        <>
-          <Button variant="outlined" size="m" autoFocus onClick={historyImport.cancel}>
-            {t('cancel')}
+        running ? null : done ? (
+          <Button variant="primary" size="m" autoFocus onClick={historyImport.close}>
+            {t('close')}
           </Button>
-          <Button
-            variant={replace ? 'dangerOutlined' : 'primary'}
-            size="m"
-            onClick={() => void historyImport.confirm()}
-          >
-            {t(replace ? 'historyImportConfirmReplace' : 'historyImportConfirm')}
-          </Button>
-        </>
+        ) : (
+          <>
+            <Button variant="outlined" size="m" autoFocus onClick={historyImport.close}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant={replace ? 'dangerOutlined' : 'primary'}
+              size="m"
+              onClick={() => void historyImport.confirm()}
+            >
+              {t(replace ? 'historyImportConfirmReplace' : 'historyImportConfirm')}
+            </Button>
+          </>
+        )
       }
     >
-      <div className={styles.importConfirmText}>
-        {t(replace ? 'historyImportConfirmDescriptionReplace' : 'historyImportConfirmDescriptionAppend')}
-      </div>
-      <div role="radiogroup" aria-label={t('historyImportMode')} className={styles.importModeOptions}>
-        {importModes.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={mode === option.value}
-            className={clsx(
-              styles.importModeOption,
-              mode === option.value && styles.importModeOptionSelected,
-              option.danger && styles.importModeOptionDanger
-            )}
-            onClick={() => setMode(option.value)}
-          >
-            <span className={styles.importModeLabel}>{t(option.label)}</span>
-            <span className={styles.importModeDescription}>{t(option.description)}</span>
-          </button>
-        ))}
-      </div>
+      {running ? (
+        <div className={styles.importRunning}>
+          <div className={styles.importProgress} role="status" aria-live="polite">
+            <div className={styles.importProgressBar} />
+            <span>
+              {progress.sessions === 0 && progress.files === 0
+                ? t('historyImportReading')
+                : t('historyImportProgress', progress)}
+            </span>
+          </div>
+          <div className={styles.importConfirmText}>{t('historyImportRunningHint')}</div>
+        </div>
+      ) : done ? (
+        <>
+          <div className={styles.importConfirmText}>
+            {status ? t(status.key, status.params) : null}
+          </div>
+          {historyImport.reason ? (
+            <div className={styles.error}>
+              {t('historyImportFailedReason', { reason: historyImport.reason })}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <div className={styles.importConfirmText}>
+            {t(replace ? 'historyImportConfirmDescriptionReplace' : 'historyImportConfirmDescriptionAppend')}
+          </div>
+          <div role="radiogroup" aria-label={t('historyImportMode')} className={styles.importModeOptions}>
+            {importModes.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={mode === option.value}
+                className={clsx(
+                  styles.importModeOption,
+                  mode === option.value && styles.importModeOptionSelected,
+                  option.danger && styles.importModeOptionDanger
+                )}
+                onClick={() => setMode(option.value)}
+              >
+                <span className={styles.importModeLabel}>{t(option.label)}</span>
+                <span className={styles.importModeDescription}>{t(option.description)}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </Modal>
   )
 }
@@ -506,10 +543,13 @@ const errorStatus = (key: TranslationKey, error: unknown): Status => ({
 
 /** 选文件后先选择追加或覆盖并二次确认；确认后才检查文件并执行导入，任何错误都提示导入失败。 */
 const useHistoryImport = () => {
+  const t = useTranslate()
   const [file, setFile] = useState<File | null>(null)
   const [mode, setMode] = useState<ImportMode>('append')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<Status>(null)
+  const [progress, setProgress] = useState<{ sessions: number; files: number } | null>(null)
+  const [reason, setReason] = useState<string | null>(null)
   const importing = useRef(false)
 
   const confirm = async () => {
@@ -517,16 +557,25 @@ const useHistoryImport = () => {
       return
     }
     importing.current = true
-    setFile(null)
     setBusy(true)
     setStatus(null)
+    setReason(null)
+    setProgress({ sessions: 0, files: 0 })
     try {
-      const count = await importHistory(file, mode)
+      const count = await importHistory(file, mode, setProgress)
       setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
-    } catch {
+    } catch (error) {
       setStatus({ key: 'historyImportFailed', error: true })
+      setReason(
+        error instanceof BackupError
+          ? t(error.key)
+          : error instanceof Error
+            ? error.message
+            : null
+      )
     } finally {
       importing.current = false
+      setProgress(null)
       setBusy(false)
     }
   }
@@ -535,12 +584,18 @@ const useHistoryImport = () => {
     setMode('append')
     setFile(next)
   }
-  const cancel = () => {
+  const close = () => {
+    if (importing.current) {
+      return
+    }
     setMode('append')
     setFile(null)
+    setStatus(null)
+    setProgress(null)
+    setReason(null)
   }
 
-  return { file, mode, setMode, busy, status, select, cancel, confirm }
+  return { file, mode, setMode, busy, status, progress, reason, select, close, confirm }
 }
 
 /** 导入历史：默认追加新对话，可在确认时选择覆盖。 */
