@@ -17,6 +17,12 @@
 
 ## 怎么选
 
+先看三条：
+
+- **有自己的域名（托管在 Cloudflare）** → Workers：静态文件不计费，一键部署，`workers.dev` 打不开也没影响；
+- **没有域名、主要在国内访问** → Pages：`pages.dev` 通常比 `workers.dev` 可达，代价是静态文件也计入请求数；
+- **要大附件、数据自持或内网使用** → 本地容器。
+
 | | Workers | Pages | 本地容器 |
 | --- | --- | --- | --- |
 | 成本 | 免费额度内 0 元 | 免费额度内 0 元 | 一台服务器 + 域名（可选） |
@@ -33,7 +39,7 @@
 
 ---
 
-## 一、Cloudflare Workers（推荐，免费）
+## 一、Cloudflare Workers（免费，静态不计费）
 
 一个 Worker 同时提供 `/data` 接口、`/api` 代理和静态资源，数据存 D1。不需要 Pages，也不需要信用卡。
 
@@ -133,7 +139,7 @@ rm .secrets
 
 ---
 
-## 二、Cloudflare Pages（`pages.dev` 域名）
+## 二、Cloudflare Pages（`pages.dev` 域名，国内无域名时优先）
 
 Pages 的 advanced mode 可以把同一个 Worker 作为 `_worker.js` 运行。**一键按钮不支持 Pages**，需要手动建项目；静态资源和 API 走同一个 Function。
 
