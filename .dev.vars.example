@@ -1,5 +1,5 @@
-# Cloudflare Workers 部署（Deploy to Cloudflare 按钮会读取本文件并提示填写）
-AUTH_USERNAME=admin
-# 至少 14 位
+# Cloudflare Workers 部署：Deploy to Cloudflare 按钮会读取本文件，把每个键提示成「密钥」。
+# 登录名不放这里——它是普通变量，改 wrangler.jsonc 的 vars.AUTH_USERNAME 即可。
+# 密码至少 14 位
 AUTH_PASSWORD=
 DEEPSEEK_API_KEY=

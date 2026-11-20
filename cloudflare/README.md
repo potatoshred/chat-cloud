@@ -36,7 +36,7 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 点击后的步骤：
 
 1. 授权 GitHub，Cloudflare 把仓库复制到你自己的账号；
-2. 确认 Worker 名称、D1 名称，按提示填 `AUTH_USERNAME`、`AUTH_PASSWORD`、`DEEPSEEK_API_KEY`（来自 `.dev.vars.example`）；
+2. 确认 Worker 名称、D1 名称，按提示填 `AUTH_PASSWORD`、`DEEPSEEK_API_KEY`（来自 `.dev.vars.example`）；登录名来自 `wrangler.jsonc` 的 `vars`，不在这里填；
 3. **Build command 保持 `pnpm build` 即可**——构建脚本会读 `WORKERS_CI=1` 自动切到边缘版；
 4. Deploy command 保持仓库里的 `deploy` 脚本：自动建表（`d1 migrations apply`）再部署。
 
@@ -145,7 +145,6 @@ npx wrangler d1 execute deepseek-chat --remote --file=cloudflare/schema.sql
 pnpm cf:build
 
 # 4. 配置密钥
-npx wrangler secret put AUTH_USERNAME
 npx wrangler secret put AUTH_PASSWORD      # 至少 14 位；同时用于派生 Cookie 签名密钥
 npx wrangler secret put DEEPSEEK_API_KEY
 
