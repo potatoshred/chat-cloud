@@ -4,6 +4,11 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-cloud)
 
+快速跳转：
+
+- [部署操作指南（截图版）](docs/op.md)
+- [Cloudflare 实现细节与故障排查](cloudflare/README.md)
+
 ## 为什么要改造原项目
 
 原版 `deepseek-ai/chat-demo` 是演示性质的纯前端页面：在网页里填写 API Key、浏览器直连上游接口、数据只保存在 IndexedDB。由此带来几个现实问题：
