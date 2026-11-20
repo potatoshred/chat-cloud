@@ -50,7 +50,9 @@
 1. **填两个密钥**：`AUTH_PASSWORD`（登录密码，至少 14 位）和 `DEEPSEEK_API_KEY`，注意类型都要选「密钥（Secret）」。
 2. **改登录名（可选）**：默认是 `admin`。想换的话，去新仓库的 `wrangler.jsonc` 里改 `vars.AUTH_USERNAME` 再重新部署即可。
 
-其余的 Worker 名称、D1 数据库、构建和部署命令、建表迁移全部走默认值，不用动，直接点部署。跑完后打开 `https://chat-demo.<你的子域>.workers.dev`，用刚才设的账号密码就能登录。
+> 项目名称默认是 `chat-demo`。如果这个 GitHub 账号下已经有同名仓库（比如源仓库本身），表单会提示「已存在具有该名称的存储库」，换个名字（如 `chat-cf`）即可。D1 名称保持默认的 `deepseek-chat`——它必须和 `wrangler.jsonc` 里的 `database_name` 一致，否则部署脚本会另建一个库。
+
+其余的 Worker 名称、D1 数据库、构建和部署命令、建表迁移全部走默认值，不用动，直接点部署。跑完后打开 `https://<项目名>.<你的子域>.workers.dev`（项目名没改就是 `chat-demo`），用刚才设的账号密码就能登录。
 
 ### 方式 B：在本地用命令行部署
 
