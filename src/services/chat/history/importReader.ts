@@ -19,6 +19,10 @@ export type ImportProgress = {
   sessions: number
   files: number
   phase: 'reading' | 'importing' | 'finalizing'
+  /** 会话批次准备与写入的累计墙钟耗时；两者可重叠，不能相加当作总耗时。 */
+  readMs?: number
+  saveMs?: number
+  waitingForSave?: boolean
 }
 export type ImportReaderOptions = { edge: boolean; existingIds: string[]; server?: boolean }
 export type ImportChunk =

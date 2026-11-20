@@ -363,6 +363,21 @@ const ImportSkipped = ({
   </div>
 )
 
+const ImportTiming = ({ progress }: { progress: ImportProgress | null }) => {
+  const t = useTranslate()
+  if (!progress || progress.readMs === undefined || progress.saveMs === undefined) {
+    return null
+  }
+  return (
+    <div className={styles.importConfirmText}>
+      {t('historyImportTiming', {
+        readSeconds: (progress.readMs / 1000).toFixed(1),
+        saveSeconds: (progress.saveMs / 1000).toFixed(1),
+      })}
+    </div>
+  )
+}
+
 const ImportConfirm = ({
   historyImport,
 }: {
@@ -410,9 +425,17 @@ const ImportConfirm = ({
                 ? t('historyImportReading')
                 : progress.phase === 'finalizing'
                   ? t('historyImportFinalizing')
-                  : t('historyImportProgress', progress)}
+                  : t('historyImportProgress', {
+                      parsedSessions: progress.parsedSessions,
+                      sessions: progress.sessions,
+                      files: progress.files,
+                    })}
             </span>
           </div>
+          {progress?.waitingForSave ? (
+            <div className={styles.importConfirmText}>{t('historyImportWaitingForSave')}</div>
+          ) : null}
+          <ImportTiming progress={progress} />
           <div className={styles.importConfirmText}>{t('historyImportRunningHint')}</div>
         </div>
       ) : done ? (
@@ -422,6 +445,7 @@ const ImportConfirm = ({
               ? t(status.key, status.reason ? { message: t(status.reason) } : status.params)
               : null}
           </div>
+          <ImportTiming progress={progress} />
           {historyImport.skippedExisting.length > 0 ? (
             <ImportSkipped
               title={t('historyImportSkippedExistingTitle', {
@@ -633,7 +657,6 @@ const useHistoryImport = () => {
       )
     } finally {
       importing.current = false
-      setProgress(null)
       setBusy(false)
     }
   }

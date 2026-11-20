@@ -195,6 +195,8 @@ export const en = {
   historyImportReading: 'Reading the archive…',
   historyImportProgress: 'Chats: {parsedSessions} parsed, {sessions} saved; attachments: {files} saved',
   historyImportFinalizing: 'Verifying and committing imported history…',
+  historyImportWaitingForSave: 'The next batch is ready; waiting for the current batch to finish saving…',
+  historyImportTiming: 'Chat timings: reading and processing {readSeconds}s, waiting for saves {saveSeconds}s (these may overlap)',
   historyImportSkippedExistingTitle: 'Skipped {count} chats that already exist (append mode):',
   historyImportSkippedSessionsTitle: 'Skipped {count} chats (each over the 2 MB row limit):',
   historyImportSkippedTitle: 'Skipped {count} attachments:',

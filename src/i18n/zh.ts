@@ -186,6 +186,8 @@ export const zh = {
   historyImportReading: '正在读取归档…',
   historyImportProgress: '会话：已解析 {parsedSessions} 个、已保存 {sessions} 个；附件：已保存 {files} 个',
   historyImportFinalizing: '正在校验并提交导入记录…',
+  historyImportWaitingForSave: '下一批已准备好，正在等待当前批次保存完成…',
+  historyImportTiming: '会话累计耗时：读取处理 {readSeconds} 秒，保存等待 {saveSeconds} 秒（两者可同时进行）',
   historyImportSkippedExistingTitle: '已跳过 {count} 个已存在的会话（追加模式）：',
   historyImportSkippedSessionsTitle: '已跳过 {count} 个会话（超过单条 2MB 限制）：',
   historyImportSkippedTitle: '已跳过 {count} 个附件：',

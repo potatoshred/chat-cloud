@@ -53,8 +53,17 @@ export const importArchive = async (
   const existingIds = options.skipExisting
     ? (await db.loadSessionSummaries()).map((summary) => summary.id)
     : []
-  const progress: ImportProgress = { parsedSessions: 0, sessions: 0, files: 0, phase: 'reading' }
-  const report = () => onProgress?.({ ...progress })
+  const progress: ImportProgress = {
+    parsedSessions: 0,
+    sessions: 0,
+    files: 0,
+    phase: 'reading',
+    readMs: 0,
+    saveMs: 0,
+  }
+  let reading = false
+  let saving = false
+  const report = () => onProgress?.({ ...progress, waitingForSave: saving && !reading })
   const controller = new AbortController()
   const reader = readImportChunks(
     file,
@@ -100,11 +109,48 @@ export const importArchive = async (
     }
   }
   // 把失败作为值立即接住，预读在当前批上传期间失败也不会产生未处理的 rejection。
-  const pull = () =>
-    reader.next().then(
-      (result) => ({ ok: true as const, result }),
-      (error: unknown) => ({ ok: false as const, error })
+  const pull = () => {
+    reading = true
+    const started = performance.now()
+    return reader.next().then(
+      (result) => {
+        reading = false
+        if (
+          !result.done &&
+          (result.value.type === 'sessions' || result.value.type === 'sessionsJson')
+        ) {
+          // 只统计请求下一批到准备完成；结果在队列里等待上传的时间不计入解析。
+          progress.readMs = (progress.readMs ?? 0) + performance.now() - started
+        }
+        report()
+        return { ok: true as const, result }
+      },
+      (error: unknown) => {
+        reading = false
+        return { ok: false as const, error }
+      }
     )
+  }
+  const saveSessions = async (
+    chunk: Extract<ImportChunk, { type: 'sessions' | 'sessionsJson' }>
+  ) => {
+    saving = true
+    report()
+    const started = performance.now()
+    try {
+      if (chunk.type === 'sessionsJson') {
+        await addStagingSessionsJson(chunk.json)
+        progress.sessions += chunk.count
+      } else {
+        await db.addStagingSessions(chunk.sessions)
+        progress.sessions += chunk.sessions.length
+      }
+    } finally {
+      progress.saveMs = (progress.saveMs ?? 0) + performance.now() - started
+      saving = false
+      report()
+    }
+  }
   let next = pull()
   try {
     while (true) {
@@ -126,14 +172,8 @@ export const importArchive = async (
         return
       }
       next = pull()
-      if (chunk.type === 'sessionsJson') {
-        await addStagingSessionsJson(chunk.json)
-        progress.sessions += chunk.count
-        report()
-      } else if (chunk.type === 'sessions') {
-        await db.addStagingSessions(chunk.sessions)
-        progress.sessions += chunk.sessions.length
-        report()
+      if (chunk.type === 'sessionsJson' || chunk.type === 'sessions') {
+        await saveSessions(chunk)
       } else {
         await saveFile(chunk)
       }
