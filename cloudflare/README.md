@@ -37,12 +37,25 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 
 1. 授权 GitHub，Cloudflare 把仓库复制到你自己的账号；
 2. 确认 Worker 名称、D1 名称，按提示填 `AUTH_USERNAME`、`AUTH_PASSWORD`、`DEEPSEEK_API_KEY`（来自 `.dev.vars.example`）；
-3. **把 Build command 改成 `pnpm cf:build`**（默认填入的 `pnpm build` 是静态版，不带 `CHAT_EDGE`）；
+3. **Build command 保持 `pnpm build` 即可**——构建脚本会读 `WORKERS_CI=1` 自动切到边缘版；
 4. Deploy command 保持仓库里的 `deploy` 脚本：自动建表（`d1 migrations apply`）再部署。
 
 之后每次 push 到 main，Workers Builds 会自动重新构建并部署；构建失败时线上保持上一个版本。
 
-注意：按钮只认**默认分支**（`main`）。`cf:build` 还会把 `cloudflare/_headers` 复制进 `dist`，用来给 `index.html` 加 `no-store`、给带哈希的静态文件加长缓存。
+注意：按钮只认**默认分支**（`main`）。边缘构建会把 `cloudflare/_headers` 复制进 `dist`，用来给 `index.html` 加 `no-store`、给带哈希的静态文件加长缓存。
+
+### 构建目标是怎么判定的
+
+`pnpm build` 现在是一个统一的入口（`scripts/build.mjs`），按环境选参数：
+
+| 环境 | 判定依据 | 产物 |
+| --- | --- | --- |
+| Workers Builds | `WORKERS_CI=1` | 服务端 + EDGE + `_headers` |
+| Cloudflare Pages | `CF_PAGES` | 同上，另加 `_worker.js` |
+| Docker | `CHAT_SERVER_API=true`（Dockerfile 显式传） | 服务端，附件/轮询保持容器版参数 |
+| 本地、GitHub Actions | 无标记 | 纯静态，直连上游 API |
+
+想强制某个目标时用 `pnpm cf:build`（边缘）或 `CHAT_SERVER_API=true pnpm build`（容器）。构建开始会打印一行 `[build] target=...`，日志里能直接看到选了什么。
 
 ## 部署到 pages.dev（可选）
 
@@ -51,7 +64,7 @@ Cloudflare 的 Deploy to Cloudflare 按钮会：把仓库克隆到你的 GitHub 
 1. 构建时把 Worker 复制进产物：
 
    ```sh
-   pnpm cf:build:pages      # = cf:build + cp cloudflare/worker.mjs dist/_worker.js
+   pnpm cf:build:pages      # 等价于 CF_PAGES=1 pnpm build；会写入 dist/_worker.js
    ```
 
 2. Cloudflare 控制台 → Workers & Pages → Create → Pages → 连接 Git 仓库：
@@ -128,7 +141,7 @@ npx wrangler d1 create deepseek-chat
 # 2. 建表
 npx wrangler d1 execute deepseek-chat --remote --file=cloudflare/schema.sql
 
-# 3. 构建前端（EDGE 开关会收紧附件上限与导入批次）
+# 3. 构建前端（本地没有 WORKERS_CI，用 cf:build 显式选边缘版）
 pnpm cf:build
 
 # 4. 配置密钥

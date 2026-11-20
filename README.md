@@ -57,8 +57,9 @@ ssh -L 8090:127.0.0.1:8090 your-user@your-server
 <https://deploy.workers.cloudflare.com/?url=https://github.com/potatoshred/chat-demo>。
 
 点击后 Cloudflare 会把仓库复制到你的账号、自动创建 D1、构建并部署，最后给出
-`https://<名字>.<子域>.workers.dev` 地址。需要改一处：**Build command 填 `pnpm cf:build`**
-（默认填的是静态版 `pnpm build`）。
+`https://<名字>.<子域>.workers.dev` 地址。**Build command 保持默认的 `pnpm build` 即可**：
+构建脚本会识别 Workers Builds 注入的 `WORKERS_CI=1`，自动切到服务端 + 免费额度参数。
+（想手动指定时也可以用 `pnpm cf:build`。）
 
 免费版与容器版的差异：
 

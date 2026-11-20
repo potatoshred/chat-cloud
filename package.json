@@ -7,13 +7,13 @@
   "type": "module",
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
-    "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
+    "build": "node scripts/build.mjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write .",
-    "cf:build": "CHAT_SERVER_API=true CHAT_EDGE=true pnpm build && cp cloudflare/_headers dist/_headers",
+    "cf:build": "CHAT_SERVER_API=true CHAT_EDGE=true node scripts/build.mjs",
     "deploy": "node scripts/cloudflare-deploy.mjs",
-    "cf:build:pages": "pnpm cf:build && cp cloudflare/worker.mjs dist/_worker.js"
+    "cf:build:pages": "CF_PAGES=1 node scripts/build.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",
