@@ -64,7 +64,15 @@ const sessionOf = (id, title = '测试会话') => ({
   updatedAt: 2,
   rootMessageId: 'u1',
   messages: [
-    { id: 'u1', role: 'user', content: '你好世界', files: [], createdAt: 1, parentId: null, selectedChildId: 'a1' },
+    {
+      id: 'u1',
+      role: 'user',
+      content: '你好世界',
+      files: [],
+      createdAt: 1,
+      parentId: null,
+      selectedChildId: 'a1',
+    },
     {
       id: 'a1',
       role: 'assistant',
@@ -88,6 +96,33 @@ const sessionOf = (id, title = '测试会话') => ({
   ],
 })
 
+/** 两个请求都完成预读后才执行批次，稳定覆盖版本校验到写入之间的窗口。 */
+const synchronizeBatches = (db, count = 2) => {
+  const batch = db.batch.bind(db)
+  let release
+  const ready = new Promise((resolve) => {
+    release = resolve
+  })
+  db.batch = async (statements) => {
+    count -= 1
+    if (count === 0) {
+      db.batch = batch
+      release()
+    }
+    await ready
+    return batch(statements)
+  }
+}
+
+const beforeNextBatch = (db, run) => {
+  const batch = db.batch.bind(db)
+  db.batch = async (statements) => {
+    db.batch = batch
+    await run()
+    return batch(statements)
+  }
+}
+
 test('login issues a cookie and /data requires it', async () => {
   const { env } = fixture()
   assert.equal((await call(env, '/data/state')).status, 401)
@@ -98,7 +133,8 @@ test('login issues a cookie and /data requires it', async () => {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        csrf: /name="csrf" value="([^"]+)"/.exec(await (await call(env, '/login')).text())?.[1] ?? '',
+        csrf:
+          /name="csrf" value="([^"]+)"/.exec(await (await call(env, '/login')).text())?.[1] ?? '',
         username: 'admin',
         password: 'wrong-password-here',
       }),
@@ -163,6 +199,136 @@ test('sessions round-trip with revision checks and state summaries', async () =>
   assert.equal((await call(env, '/data/sessions/s1', { cookie })).status, 404)
 })
 
+for (const existing of [false, true]) {
+  test(`concurrent ${existing ? 'updates' : 'creates'} accept one session write and leave only its index`, async () => {
+    const { db, env } = fixture()
+    const cookie = await login(env)
+    const { generation } = await (await call(env, '/data/state', { cookie })).json()
+    const revision = existing
+      ? (
+          await (
+            await call(env, '/data/sessions/s1', {
+              method: 'PUT',
+              cookie,
+              body: { generation, revision: null, session: sessionOf('s1') },
+            })
+          ).json()
+        ).revision
+      : null
+    const sessions = [sessionOf('s1', 'device-A'), sessionOf('s1', 'device-B')]
+    synchronizeBatches(db)
+    const responses = await Promise.all(
+      sessions.map((session) =>
+        call(env, '/data/sessions/s1', {
+          method: 'PUT',
+          cookie,
+          body: { generation, revision, session },
+        })
+      )
+    )
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409])
+    const winner = responses.findIndex((response) => response.status === 200)
+    const saved = await (await call(env, '/data/sessions/s1', { cookie })).json()
+    assert.equal(saved.session.title, sessions[winner].title)
+    const rejectedTitle = sessions[1 - winner].title
+    const search = await (
+      await call(env, '/data/search', {
+        method: 'POST',
+        cookie,
+        body: { query: rejectedTitle },
+      })
+    ).json()
+    assert.equal(search.total, 0)
+    assert.equal(
+      (await (await call(env, '/data/state', { cookie })).json()).version,
+      existing ? '2' : '1'
+    )
+    assert.equal(await db.prepare("SELECT value FROM meta WHERE key='conflict'").first(), null)
+  })
+}
+
+test('concurrent draft writes accept only one revision', async () => {
+  const { db, env } = fixture()
+  const cookie = await login(env)
+  const { generation } = await (await call(env, '/data/state', { cookie })).json()
+  for (const revision of [null, 'current']) {
+    const current =
+      revision === null
+        ? null
+        : (await (await call(env, '/data/drafts', { cookie })).json()).drafts[0].revision
+    synchronizeBatches(db)
+    const responses = await Promise.all(
+      ['draft-A', 'draft-B'].map((text) =>
+        call(env, '/data/drafts/new', {
+          method: 'PUT',
+          cookie,
+          body: { generation, revision: current, draft: { text, attachments: [] } },
+        })
+      )
+    )
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409])
+    const winner = responses.findIndex((response) => response.status === 200)
+    const saved = await (await call(env, '/data/drafts', { cookie })).json()
+    assert.equal(saved.drafts[0].draft.text, ['draft-A', 'draft-B'][winner])
+  }
+})
+
+test('delete rechecks the session revision inside its atomic batch', async () => {
+  const { db, env } = fixture()
+  const cookie = await login(env)
+  const { generation } = await (await call(env, '/data/state', { cookie })).json()
+  const version = await (
+    await call(env, '/data/sessions/s1', {
+      method: 'PUT',
+      cookie,
+      body: { generation, revision: null, session: sessionOf('s1') },
+    })
+  ).json()
+  beforeNextBatch(db, async () => {
+    assert.equal(
+      (
+        await call(env, '/data/sessions/s1', {
+          method: 'PATCH',
+          cookie,
+          body: { ...version, title: 'concurrent rename' },
+        })
+      ).status,
+      200
+    )
+  })
+  const removed = await call(env, '/data/sessions/s1', { method: 'DELETE', cookie, body: version })
+  assert.equal(removed.status, 409)
+  const saved = await (await call(env, '/data/sessions/s1', { cookie })).json()
+  assert.equal(saved.session.title, 'concurrent rename')
+  assert.equal((await (await call(env, '/data/state', { cookie })).json()).version, '2')
+})
+
+test('a draft cannot be written after its owning session is deleted', async () => {
+  const { db, env } = fixture()
+  const cookie = await login(env)
+  const { generation } = await (await call(env, '/data/state', { cookie })).json()
+  const version = await (
+    await call(env, '/data/sessions/s1', {
+      method: 'PUT',
+      cookie,
+      body: { generation, revision: null, session: sessionOf('s1') },
+    })
+  ).json()
+  beforeNextBatch(db, async () => {
+    assert.equal(
+      (await call(env, '/data/sessions/s1', { method: 'DELETE', cookie, body: version })).status,
+      200
+    )
+  })
+  const saved = await call(env, '/data/drafts/session%3As1', {
+    method: 'PUT',
+    cookie,
+    body: { generation, revision: null, draft: { text: 'stale draft', attachments: [] } },
+  })
+  assert.equal(saved.status, 409)
+  assert.deepEqual((await (await call(env, '/data/drafts', { cookie })).json()).drafts, [])
+})
+
 test('drafts, settings and files stay in sync', async () => {
   const { env } = fixture()
   const cookie = await login(env)
@@ -189,9 +355,7 @@ test('drafts, settings and files stay in sync', async () => {
   assert.equal(settings.status, 200)
   assert.equal((await settings.json()).reasoningEffort, 'max')
   assert.equal(
-    (
-      await call(env, '/data/settings', { method: 'PATCH', cookie, body: { model: 42 } })
-    ).status,
+    (await call(env, '/data/settings', { method: 'PATCH', cookie, body: { model: 42 } })).status,
     400
   )
 
@@ -229,12 +393,16 @@ test('search and 24h usage read the written index', async () => {
     body: { generation: state.generation, revision: null, session: sessionOf('s1') },
   })
 
-  const found = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })).json()
+  const found = await (
+    await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })
+  ).json()
   assert.equal(found.total, 1)
   assert.equal(found.hits[0].sessionId, 's1')
   assert.match(found.hits[0].snippet, /你好世界/)
 
-  const none = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '不存在' } })).json()
+  const none = await (
+    await call(env, '/data/search', { method: 'POST', cookie, body: { query: '不存在' } })
+  ).json()
   assert.equal(none.total, 0)
 
   const usage = await (await call(env, '/data/usage', { cookie })).json()
@@ -258,7 +426,9 @@ test('streaming replies are indexed only once they finish', async () => {
     cookie,
     body: { generation, revision: null, session: streamingSession },
   })
-  const during = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '回答内容' } })).json()
+  const during = await (
+    await call(env, '/data/search', { method: 'POST', cookie, body: { query: '回答内容' } })
+  ).json()
   assert.equal(during.total, 0)
 
   const finished = await (await call(env, '/data/sessions/s2', { cookie })).json()
@@ -273,7 +443,9 @@ test('streaming replies are indexed only once they finish', async () => {
     ).status,
     200
   )
-  const afterDone = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '回答内容' } })).json()
+  const afterDone = await (
+    await call(env, '/data/search', { method: 'POST', cookie, body: { query: '回答内容' } })
+  ).json()
   assert.equal(afterDone.total, 1)
 })
 
@@ -300,22 +472,245 @@ test('import staging commits in append mode', async () => {
     200
   )
   assert.equal(
-    (await call(env, `${staging}/files/f9`, { method: 'PUT', cookie, headers: { 'content-type': 'image/png' }, body: new Uint8Array(8) })).status,
+    (
+      await call(env, `${staging}/files/f9`, {
+        method: 'PUT',
+        cookie,
+        headers: { 'content-type': 'image/png' },
+        body: new Uint8Array(8),
+      })
+    ).status,
     200
   )
   assert.equal(
-    (await call(env, `${staging}/types`, { method: 'PATCH', cookie, body: { f9: 'image/png' } })).status,
+    (await call(env, `${staging}/types`, { method: 'PATCH', cookie, body: { f9: 'image/png' } }))
+      .status,
     200
   )
-  const committed = await (await call(env, `${staging}/commit`, { method: 'POST', cookie, body: { mode: 'append' } })).json()
+  const committed = await (
+    await call(env, `${staging}/commit`, { method: 'POST', cookie, body: { mode: 'append' } })
+  ).json()
   assert.equal(committed.importedCount, 1)
   assert.equal(committed.skippedCount, 1)
   assert.equal(committed.sessions.length, 2)
   assert.equal((await call(env, '/data/files/f9', { cookie })).status, 200)
 
   // 导入的会话立刻可搜索，不需要再保存一次。
-  const found = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })).json()
+  const found = await (
+    await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })
+  ).json()
   assert.equal(found.total, 2)
+})
+
+test('import commit rejects a session write made after its version precheck', async () => {
+  const { db, env } = fixture()
+  const cookie = await login(env)
+  const { generation } = await (await call(env, '/data/state', { cookie })).json()
+  const version = await (
+    await call(env, '/data/sessions/old', {
+      method: 'PUT',
+      cookie,
+      body: { generation, revision: null, session: sessionOf('old') },
+    })
+  ).json()
+  const { id } = await (await call(env, '/data/imports', { method: 'POST', cookie })).json()
+  await call(env, `/data/imports/${id}/sessions`, {
+    method: 'PUT',
+    cookie,
+    body: [sessionOf('imported')],
+  })
+  beforeNextBatch(db, async () => {
+    assert.equal(
+      (
+        await call(env, '/data/sessions/old', {
+          method: 'PATCH',
+          cookie,
+          body: { ...version, title: 'keep concurrent edit' },
+        })
+      ).status,
+      200
+    )
+  })
+  const commit = await call(env, `/data/imports/${id}/commit`, {
+    method: 'POST',
+    cookie,
+    body: { mode: 'replace' },
+  })
+  assert.equal(commit.status, 409)
+  const state = await (await call(env, '/data/state', { cookie })).json()
+  assert.equal(state.generation, generation)
+  assert.equal(state.version, '2')
+  assert.deepEqual(
+    state.sessions.map((session) => session.title),
+    ['keep concurrent edit']
+  )
+  assert.ok(await db.prepare('SELECT id FROM imports WHERE id=?').bind(id).first())
+  assert.ok(await db.prepare('SELECT id FROM staged_sessions WHERE owner=?').bind(id).first())
+})
+
+for (const kind of ['session', 'file']) {
+  test(`a ${kind} write cannot cross a concurrent history replacement`, async () => {
+    const { db, env } = fixture()
+    const cookie = await login(env)
+    const { generation } = await (await call(env, '/data/state', { cookie })).json()
+    const { id } = await (await call(env, '/data/imports', { method: 'POST', cookie })).json()
+    await call(env, `/data/imports/${id}/sessions`, {
+      method: 'PUT',
+      cookie,
+      body: [sessionOf('imported')],
+    })
+    beforeNextBatch(db, async () => {
+      assert.equal(
+        (
+          await call(env, `/data/imports/${id}/commit`, {
+            method: 'POST',
+            cookie,
+            body: { mode: 'replace' },
+          })
+        ).status,
+        200
+      )
+    })
+    const saved =
+      kind === 'session'
+        ? await call(env, '/data/sessions/stale', {
+            method: 'PUT',
+            cookie,
+            body: { generation, revision: null, session: sessionOf('stale') },
+          })
+        : await call(env, '/data/files/stale', {
+            method: 'PUT',
+            cookie,
+            headers: { 'x-chat-generation': generation },
+            body: new Uint8Array([1]),
+          })
+    assert.equal(saved.status, 409)
+    const state = await (await call(env, '/data/state', { cookie })).json()
+    assert.deepEqual(
+      state.sessions.map((session) => session.id),
+      ['imported']
+    )
+    assert.equal(state.version, '1')
+    assert.equal((await call(env, '/data/files/stale', { cookie })).status, 404)
+  })
+}
+
+test('new imports collect expired and orphaned staging without removing active imports', async () => {
+  const { db, env } = fixture()
+  const cookie = await login(env)
+  const tasks = []
+  for (const name of ['expired', 'orphaned', 'active']) {
+    const { id } = await (await call(env, '/data/imports', { method: 'POST', cookie })).json()
+    tasks.push({ id, name })
+    assert.equal(
+      (
+        await call(env, `/data/imports/${id}/sessions`, {
+          method: 'PUT',
+          cookie,
+          body: [sessionOf(name)],
+        })
+      ).status,
+      200
+    )
+    assert.equal(
+      (
+        await call(env, `/data/imports/${id}/files/${name}`, {
+          method: 'PUT',
+          cookie,
+          body: new Uint8Array([1]),
+        })
+      ).status,
+      200
+    )
+  }
+  await db.prepare('UPDATE imports SET expires=0 WHERE id=?').bind(tasks[0].id).run()
+  await db.prepare('DELETE FROM imports WHERE id=?').bind(tasks[1].id).run()
+  assert.equal((await call(env, '/data/imports', { method: 'POST', cookie })).status, 200)
+  for (const { id, name } of tasks) {
+    for (const table of ['staged_sessions', 'staged_files', 'staged_docs']) {
+      const count = (
+        await db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE owner=?`).bind(id).first()
+      ).n
+      assert.equal(count > 0, name === 'active')
+    }
+  }
+  const commit = await call(env, `/data/imports/${tasks[2].id}/commit`, {
+    method: 'POST',
+    cookie,
+    body: { mode: 'append' },
+  })
+  assert.equal(commit.status, 200)
+  assert.equal((await commit.json()).importedCount, 1)
+  assert.equal((await call(env, '/data/files/active', { cookie })).status, 200)
+})
+
+test('delete removes exclusive originals and keeps shared session and draft attachments', async () => {
+  const { db, env } = fixture()
+  const cookie = await login(env)
+  const { generation } = await (await call(env, '/data/state', { cookie })).json()
+  const files = Array.from({ length: 120 }, (_, index) => ({
+    id: `f${index}`,
+    name: `f${index}.png`,
+    size: 1,
+    isImage: true,
+    mimeType: 'image/png',
+  }))
+  for (const id of [...files.map((file) => file.id), 'draft-only']) {
+    await db
+      .prepare('INSERT INTO files VALUES (?,?,?)')
+      .bind(id, 'image/png', new Uint8Array([1]))
+      .run()
+  }
+  const session = sessionOf('s1')
+  session.messages = [0, 1, 2].map((index) => ({
+    ...session.messages[0],
+    id: `u${index}`,
+    files: files.slice(index * 40, (index + 1) * 40),
+  }))
+  const version = await (
+    await call(env, '/data/sessions/s1', {
+      method: 'PUT',
+      cookie,
+      body: { generation, revision: null, session },
+    })
+  ).json()
+  const shared = sessionOf('s2')
+  shared.messages[0].files = [files[0]]
+  await call(env, '/data/sessions/s2', {
+    method: 'PUT',
+    cookie,
+    body: { generation, revision: null, session: shared },
+  })
+  await call(env, '/data/drafts/new', {
+    method: 'PUT',
+    cookie,
+    body: { generation, revision: null, draft: { text: 'keep', attachments: [files[1]] } },
+  })
+  await call(env, '/data/drafts/session%3As1', {
+    method: 'PUT',
+    cookie,
+    body: {
+      generation,
+      revision: null,
+      draft: {
+        text: 'delete',
+        attachments: [{ id: 'draft-only', name: 'draft.png', isImage: true }],
+      },
+    },
+  })
+  assert.equal(
+    (await call(env, '/data/sessions/s1', { method: 'DELETE', cookie, body: version })).status,
+    200
+  )
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM files').first()).n, 2)
+  assert.equal((await call(env, '/data/files/f0', { cookie })).status, 200)
+  assert.equal((await call(env, '/data/files/f1', { cookie })).status, 200)
+  assert.equal((await call(env, '/data/files/draft-only', { cookie })).status, 404)
+  const drafts = await (await call(env, '/data/drafts', { cookie })).json()
+  assert.deepEqual(drafts.drafts.find((draft) => draft.id === 'session:s1').draft, {
+    text: '',
+    attachments: [],
+  })
 })
 
 test('types update only rewrites chats that carry attachments', async () => {
@@ -365,19 +760,30 @@ test('replace import swaps data and rebuilds the search index', async () => {
 
   const created = await (await call(env, '/data/imports', { method: 'POST', cookie })).json()
   const staging = `/data/imports/${created.id}`
-  await call(env, `${staging}/sessions`, { method: 'PUT', cookie, body: [sessionOf('s9', '替换后')] })
-  const committed = await (await call(env, `${staging}/commit`, { method: 'POST', cookie, body: { mode: 'replace' } })).json()
+  await call(env, `${staging}/sessions`, {
+    method: 'PUT',
+    cookie,
+    body: [sessionOf('s9', '替换后')],
+  })
+  const committed = await (
+    await call(env, `${staging}/commit`, { method: 'POST', cookie, body: { mode: 'replace' } })
+  ).json()
   assert.equal(committed.importedCount, 1)
-  assert.deepEqual(committed.sessions.map((session) => session.id), ['s9'])
+  assert.deepEqual(
+    committed.sessions.map((session) => session.id),
+    ['s9']
+  )
 
-  const found = await (await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })).json()
+  const found = await (
+    await call(env, '/data/search', { method: 'POST', cookie, body: { query: '你好' } })
+  ).json()
   assert.equal(found.total, 1)
   assert.equal(found.hits[0].sessionId, 's9')
 })
 
 test('state works even when meta rows are missing', async () => {
   const { db, env } = fixture()
-  db.exec("DELETE FROM meta")
+  db.exec('DELETE FROM meta')
   const cookie = await login(env)
   const response = await call(env, '/data/state', { cookie })
   assert.equal(response.status, 200)
@@ -438,6 +844,41 @@ test('api proxy injects the server key and forwards requests', async (t) => {
   assert.equal(received[1].body, JSON.stringify({ model: 'deepseek-flash' }))
 
   assert.equal((await call(env, '/api/admin', { cookie })).status, 404)
+})
+
+test('api proxy does not send its key or follow redirects to another origin', async (t) => {
+  let destinationCalls = 0
+  const destination = createServer((_request, response) => {
+    destinationCalls++
+    response.end('unexpected destination')
+  })
+  await new Promise((resolve) => destination.listen(0, '127.0.0.1', resolve))
+  const destinationUrl = `http://127.0.0.1:${destination.address().port}/capture`
+  const upstream = createServer((request, response) => {
+    request.resume()
+    assert.equal(request.headers['x-api-key'], 'server-key')
+    response.writeHead(303, { Location: destinationUrl, 'Content-Type': 'application/json' })
+    response.end('{"redirect":true}')
+  })
+  await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve))
+  t.after(() => {
+    upstream.closeAllConnections()
+    destination.closeAllConnections()
+    upstream.close()
+    destination.close()
+  })
+  const { db } = fixture()
+  const env = makeEnv(db, { DEEPSEEK_API_BASE_URL: `http://127.0.0.1:${upstream.address().port}` })
+  const cookie = await login(env)
+  const response = await call(env, '/api/anthropic/v1/messages', {
+    method: 'POST',
+    cookie,
+    body: { model: 'test' },
+  })
+  assert.equal(response.status, 303)
+  assert.equal(response.headers.get('location'), null)
+  assert.deepEqual(await response.json(), { redirect: true })
+  assert.equal(destinationCalls, 0)
 })
 
 after(() => {

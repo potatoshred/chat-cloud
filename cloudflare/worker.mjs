@@ -54,7 +54,9 @@ const hmacKey = (secret) =>
   ])
 
 const sign = async (secret, purpose, value) =>
-  base64url(await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(`${purpose}:${value}`)))
+  base64url(
+    await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(`${purpose}:${value}`))
+  )
 
 /** 字符串常量时间比较：先各自 HMAC，再逐字节异或，避免长度不同直接短路。 */
 const sameSecret = async (secret, left, right) =>
@@ -115,7 +117,10 @@ const html = (body, status = 200, headers = {}) =>
   })
 
 const redirect = (location, headers = {}) =>
-  new Response(null, { status: 303, headers: { Location: location, 'Cache-Control': 'no-store', ...headers } })
+  new Response(null, {
+    status: 303,
+    headers: { Location: location, 'Cache-Control': 'no-store', ...headers },
+  })
 
 async function readBody(request, limit, { parseJson = true } = {}) {
   const length = Number(request.headers.get('content-length') ?? 0)
@@ -132,11 +137,26 @@ async function readBody(request, limit, { parseJson = true } = {}) {
   }
 }
 
-const all = async (db, sql, ...args) => (await db.prepare(sql).bind(...args).all()).results
-const first = (db, sql, ...args) => db.prepare(sql).bind(...args).first()
-const run = (db, sql, ...args) => db.prepare(sql).bind(...args).run()
+const all = async (db, sql, ...args) =>
+  (
+    await db
+      .prepare(sql)
+      .bind(...args)
+      .all()
+  ).results
+const first = (db, sql, ...args) =>
+  db
+    .prepare(sql)
+    .bind(...args)
+    .first()
+const run = (db, sql, ...args) =>
+  db
+    .prepare(sql)
+    .bind(...args)
+    .run()
 
-const getMeta = async (db, key) => (await first(db, 'SELECT value FROM meta WHERE key=?', key))?.value
+const getMeta = async (db, key) =>
+  (await first(db, 'SELECT value FROM meta WHERE key=?', key))?.value
 
 /** meta 的初始行：schema 只建表，老库可能没有 generation/version。每个库只检查一次。 */
 const metaReady = new WeakSet()
@@ -144,7 +164,10 @@ const ensureMeta = async (db) => {
   if (metaReady.has(db)) {
     return
   }
-  const row = await first(db, "SELECT COUNT(*) AS n FROM meta WHERE key IN ('generation','version')")
+  const row = await first(
+    db,
+    "SELECT COUNT(*) AS n FROM meta WHERE key IN ('generation','version')"
+  )
   if ((row?.n ?? 0) < 2) {
     await db.batch([
       db.prepare("INSERT OR IGNORE INTO meta VALUES ('generation', ?)").bind(crypto.randomUUID()),
@@ -187,6 +210,42 @@ const checkGeneration = async (db, generation) => {
 
 const checkRevision = (row, revision) => {
   if ((row?.revision ?? null) !== revision) conflict()
+}
+
+/**
+ * D1 不支持交互式事务：让失败的校验触发 meta.value 的 NOT NULL 约束，
+ * 由 batch 原子回滚；校验通过时不插入任何行，也不产生额外写入。
+ */
+const writeGuard = (db, condition, ...args) =>
+  db
+    .prepare(
+      `INSERT INTO meta (key,value) SELECT 'conflict',NULL WHERE NOT COALESCE((${condition}),0)`
+    )
+    .bind(...args)
+
+const versionGuard = (db, table, id, { generation, revision }) =>
+  writeGuard(
+    db,
+    `EXISTS (SELECT 1 FROM meta WHERE key='generation' AND value=?)
+       AND (SELECT revision FROM ${table} WHERE id=?) IS ?`,
+    generation,
+    id,
+    revision
+  )
+
+const atomicBatch = async (db, statements) => {
+  try {
+    return await db.batch(statements)
+  } catch (error) {
+    if (
+      /NOT NULL constraint failed: meta\.value/i.test(
+        error instanceof Error ? error.message : String(error)
+      )
+    ) {
+      conflict()
+    }
+    throw error
+  }
 }
 
 function validateSession(session, id) {
@@ -248,7 +307,8 @@ const cleanText = (text) => (typeof text === 'string' ? text.replace(CITATION, '
 /** 会话里是否有附件；类型回写按这个标记过滤，避免整库重写 JSON。 */
 function hasFiles(session) {
   return session.messages.some(
-    (message) => message?.role === 'user' && Array.isArray(message.files) && message.files.length > 0
+    (message) =>
+      message?.role === 'user' && Array.isArray(message.files) && message.files.length > 0
   )
     ? 1
     : 0
@@ -407,59 +467,50 @@ async function usageReport(db) {
     totals.cacheReadTokens += entry.cacheReadTokens
     totals.searches += entry.searches
   }
-  return { hours: USAGE_HOURS, since, totals, entries: entries.slice(0, USAGE_LIMIT), truncated: entries.length > USAGE_LIMIT }
+  return {
+    hours: USAGE_HOURS,
+    since,
+    totals,
+    entries: entries.slice(0, USAGE_LIMIT),
+    truncated: entries.length > USAGE_LIMIT,
+  }
 }
 
 // ---------- /data 路由 ----------
 
-async function deleteSession(db, id) {
-  const row = await first(db, 'SELECT json FROM sessions WHERE id=?', id)
-  const candidates = new Set()
-  if (row) {
-    try {
-      for (const message of JSON.parse(row.json).messages ?? []) {
-        if (message.role === 'user') for (const file of message.files ?? []) candidates.add(file.id)
-      }
-    } catch {
-      // 损坏的会话仍然可以删除。
-    }
-  }
-  const draft = await first(db, 'SELECT json FROM drafts WHERE id=?', `session:${id}`)
-  if (draft) {
-    try {
-      for (const file of JSON.parse(draft.json).attachments ?? []) candidates.add(file.id)
-    } catch {
-      // ignore
-    }
-  }
-  const statements = [
+async function deleteSession(db, id, version) {
+  const draftId = `session:${id}`
+  await atomicBatch(db, [
+    versionGuard(db, 'sessions', id, version),
+    // 在删除引用前清理独有附件，保留其他会话和草稿仍引用的原件。
+    // SQL 直接读取当前引用，避免草稿并发更新及大量附件超过 D1 的绑定参数限制。
+    db
+      .prepare(
+        `WITH refs AS (
+           SELECT json_extract(f.value,'$.id') AS file_id, s.id AS session_id, NULL AS draft_id
+             FROM sessions s,
+                  json_each(CASE WHEN json_valid(s.json) THEN s.json ELSE '{}' END,'$.messages') m,
+                  json_each(m.value,'$.files') f
+            WHERE json_extract(m.value,'$.role')='user'
+           UNION ALL
+           SELECT json_extract(f.value,'$.id'), NULL, d.id
+             FROM drafts d,
+                  json_each(CASE WHEN json_valid(d.json) THEN d.json ELSE '{}' END,'$.attachments') f
+         )
+         DELETE FROM files
+          WHERE id IN (SELECT file_id FROM refs WHERE session_id=? OR draft_id=?)
+            AND NOT EXISTS (
+              SELECT 1 FROM refs
+               WHERE file_id=files.id AND (session_id<>? OR draft_id<>?))`
+      )
+      .bind(id, draftId, id, draftId),
     db.prepare('DELETE FROM sessions WHERE id=?').bind(id),
     db.prepare('DELETE FROM search_docs WHERE session_id=?').bind(id),
-  ]
-  if (draft) {
-    statements.push(
-      db
-        .prepare('UPDATE drafts SET json=?, revision=? WHERE id=?')
-        .bind('{"text":"","attachments":[]}', crypto.randomUUID(), `session:${id}`)
-    )
-  }
-  await db.batch(statements)
-  if (candidates.size > 0) {
-    await db
-      .prepare(
-        `DELETE FROM files WHERE id IN (${[...candidates].map(() => '?').join(',')})
-           AND id NOT IN (
-             SELECT json_extract(f.value,'$.id')
-               FROM sessions s, json_each(s.json,'$.messages') m, json_each(m.value,'$.files') f
-              WHERE json_extract(m.value,'$.role')='user'
-             UNION
-             SELECT json_extract(f.value,'$.id')
-               FROM drafts d, json_each(d.json,'$.attachments') f)`
-      )
-      .bind(...candidates)
-      .run()
-  }
-  await db.batch([bumpVersion(db)])
+    db
+      .prepare('UPDATE drafts SET json=?, revision=? WHERE id=?')
+      .bind('{"text":"","attachments":[]}', crypto.randomUUID(), draftId),
+    bumpVersion(db),
+  ])
 }
 
 async function handleData(request, env, url) {
@@ -513,7 +564,7 @@ async function handleData(request, env, url) {
     checkRevision(row, input.revision)
 
     if (method === 'DELETE') {
-      await deleteSession(db, id)
+      await deleteSession(db, id, input)
       return json({ ok: true })
     }
     if (method !== 'PUT' && method !== 'PATCH') fail(405, '方法不支持。')
@@ -527,12 +578,18 @@ async function handleData(request, env, url) {
     }
     validateSession(session, id)
     const body = JSON.stringify(session)
-    if (byteLength(body) > SESSION_LIMIT) fail(413, '会话过大：单个会话上限约 1.9MB（按 UTF-8 字节）。')
+    if (byteLength(body) > SESSION_LIMIT)
+      fail(413, '会话过大：单个会话上限约 1.9MB（按 UTF-8 字节）。')
     const revision = crypto.randomUUID()
-    const statements = [db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?)').bind(id, body, revision)]
+    const statements = [
+      versionGuard(db, 'sessions', id, input),
+      db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?)').bind(id, body, revision),
+    ]
     if (method === 'PATCH') {
       // 改名只动标题文档，避免整会话重建索引。
-      statements.push(db.prepare("DELETE FROM search_docs WHERE session_id=? AND role='title'").bind(id))
+      statements.push(
+        db.prepare("DELETE FROM search_docs WHERE session_id=? AND role='title'").bind(id)
+      )
       if (session.title.trim()) {
         statements.push(
           db
@@ -540,13 +597,17 @@ async function handleData(request, env, url) {
             .bind(id, '', 'title', session.title, session.updatedAt ?? 0)
         )
       }
-    } else if (!session.messages.some((m) => m.role === 'assistant' && (m.status === 'pending' || m.status === 'streaming'))) {
+    } else if (
+      !session.messages.some(
+        (m) => m.role === 'assistant' && (m.status === 'pending' || m.status === 'streaming')
+      )
+    ) {
       // 流式过程中每 10 秒就要保存一次；全量重建索引会把 D1 写额度瞬间打满。
       statements.push(...replaceSearchDocs(db, id, session))
     }
     statements.push(bumpVersion(db))
-    await db.batch(statements)
-    return json({ revision, generation: await getMeta(db, 'generation') })
+    await atomicBatch(db, statements)
+    return json({ revision, generation: input.generation })
   }
 
   if (kind === 'files' && parts.length === 2 && validId(id)) {
@@ -562,15 +623,19 @@ async function handleData(request, env, url) {
       })
     }
     if (method === 'PUT') {
-      await checkGeneration(db, request.headers.get('x-chat-generation'))
+      const generation = request.headers.get('x-chat-generation')
+      await checkGeneration(db, generation)
       const bytes = await readBody(request, FILE_LIMIT, { parseJson: false })
-      await run(
-        db,
-        'INSERT OR IGNORE INTO files VALUES (?,?,?)',
-        id,
-        request.headers.get('content-type') || '',
-        bytes
-      )
+      await atomicBatch(db, [
+        writeGuard(
+          db,
+          "EXISTS (SELECT 1 FROM meta WHERE key='generation' AND value=?)",
+          generation
+        ),
+        db
+          .prepare('INSERT OR IGNORE INTO files VALUES (?,?,?)')
+          .bind(id, request.headers.get('content-type') || '', bytes),
+      ])
       return json({ ok: true })
     }
   }
@@ -584,7 +649,8 @@ async function handleData(request, env, url) {
         themePreference: (value) => ['system', 'dark', 'light'].includes(value),
         ttsVoice: (value) => ['stella', 'tide'].includes(value),
         location: (value) =>
-          value === null || (object(value) && typeof value.region === 'string' && /^[A-Z]{2}$/.test(value.region)),
+          value === null ||
+          (object(value) && typeof value.region === 'string' && /^[A-Z]{2}$/.test(value.region)),
         thinking: (value) => typeof value === 'boolean',
         reasoningEffort: (value) => ['low', 'high', 'max'].includes(value),
         model: (value) => typeof value === 'string' && value.length > 0 && value.length <= 256,
@@ -611,7 +677,11 @@ async function handleData(request, env, url) {
     const rows = await all(db, 'SELECT id, json, revision FROM drafts')
     return json({
       generation: await getMeta(db, 'generation'),
-      drafts: rows.map((row) => ({ id: row.id, draft: JSON.parse(row.json), revision: row.revision })),
+      drafts: rows.map((row) => ({
+        id: row.id,
+        draft: JSON.parse(row.json),
+        revision: row.revision,
+      })),
     })
   }
 
@@ -631,20 +701,26 @@ async function handleData(request, env, url) {
       !Array.isArray(input.draft.attachments) ||
       input.draft.attachments.some(
         (file) =>
-          !object(file) || !validId(file.id) || typeof file.name !== 'string' || typeof file.isImage !== 'boolean'
+          !object(file) ||
+          !validId(file.id) ||
+          typeof file.name !== 'string' ||
+          typeof file.isImage !== 'boolean'
       )
     ) {
       fail(400, '草稿格式无效。')
     }
     const revision = crypto.randomUUID()
-    await run(
-      db,
-      'INSERT OR REPLACE INTO drafts VALUES (?,?,?)',
-      id,
-      JSON.stringify(input.draft),
-      revision
+    const statements = [versionGuard(db, 'drafts', id, input)]
+    if (id !== 'new') {
+      statements.push(writeGuard(db, 'EXISTS (SELECT 1 FROM sessions WHERE id=?)', id.slice(8)))
+    }
+    statements.push(
+      db
+        .prepare('INSERT OR REPLACE INTO drafts VALUES (?,?,?)')
+        .bind(id, JSON.stringify(input.draft), revision)
     )
-    return json({ revision, generation: await getMeta(db, 'generation') })
+    await atomicBatch(db, statements)
+    return json({ revision, generation: input.generation })
   }
 
   if (kind === 'imports') return handleImports(request, db, parts, method)
@@ -666,11 +742,28 @@ const checkImport = async (db, id) => {
 async function handleImports(request, db, parts, method) {
   const [, id, operation, entryId] = parts
   if (parts.length === 1 && method === 'POST') {
-    await run(db, 'DELETE FROM imports WHERE expires<=?', Date.now())
+    const now = Date.now()
+    // 同时清理过期任务及旧版本遗留的孤立暂存，保留仍有效的任务。
+    await db.batch([
+      ...['staged_sessions', 'staged_files', 'staged_docs'].map((table) =>
+        db
+          .prepare(
+            `DELETE FROM ${table} WHERE owner NOT IN (SELECT id FROM imports WHERE expires>?)`
+          )
+          .bind(now)
+      ),
+      db.prepare('DELETE FROM imports WHERE expires<=?').bind(now),
+    ])
     const count = await first(db, 'SELECT COUNT(*) AS n FROM imports')
     if (count.n >= 8) fail(429, '导入任务过多，请稍后重试。')
     const created = crypto.randomUUID()
-    await run(db, 'INSERT INTO imports VALUES (?,?,?)', created, await getMeta(db, 'version'), Date.now() + 24 * 3600_000)
+    await run(
+      db,
+      'INSERT INTO imports VALUES (?,?,?)',
+      created,
+      await getMeta(db, 'version'),
+      Date.now() + 24 * 3600_000
+    )
     return json({ id: created })
   }
   if (!validId(id)) fail(400, '导入标识无效。')
@@ -705,7 +798,17 @@ async function handleImports(request, db, parts, method) {
           ).n
         : 0
     const importedCount = total - skippedCount
-    const statements = []
+    const statements = [
+      writeGuard(
+        db,
+        `EXISTS (SELECT 1 FROM meta WHERE key='version' AND value=?)
+           AND EXISTS (SELECT 1 FROM imports WHERE id=? AND version=? AND expires>?)`,
+        staging.version,
+        id,
+        staging.version,
+        Date.now()
+      ),
+    ]
 
     if (mode === 'append') {
       // 先清掉“即将新增”的会话可能残留的文档，再把暂存索引复制过去；最后插入会话。
@@ -734,7 +837,11 @@ async function handleImports(request, db, parts, method) {
               WHERE s.owner=? AND NOT EXISTS (SELECT 1 FROM sessions t WHERE t.id=s.id)`
           )
           .bind(id),
-        db.prepare('INSERT OR IGNORE INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?').bind(id)
+        db
+          .prepare(
+            'INSERT OR IGNORE INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?'
+          )
+          .bind(id)
       )
     } else {
       // 一条 INSERT 里无法给每行生成不同 UUID：先写同一个哨兵值，再统一改写成随机 revision。
@@ -744,10 +851,20 @@ async function handleImports(request, db, parts, method) {
         db.prepare('DELETE FROM search_docs').bind(),
         db.prepare('DELETE FROM files').bind(),
         db.prepare('DELETE FROM drafts').bind(),
-        db.prepare('INSERT INTO sessions SELECT id,json,? FROM staged_sessions WHERE owner=?').bind(sentinel, id),
-        db.prepare('INSERT INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?').bind(id),
-        db.prepare('UPDATE sessions SET revision=lower(hex(randomblob(16))) WHERE revision=?').bind(sentinel),
-        db.prepare('INSERT INTO search_docs SELECT session_id,message_id,role,text,updated_at FROM staged_docs WHERE owner=?').bind(id)
+        db
+          .prepare('INSERT INTO sessions SELECT id,json,? FROM staged_sessions WHERE owner=?')
+          .bind(sentinel, id),
+        db
+          .prepare('INSERT INTO files SELECT id,mime,bytes FROM staged_files WHERE owner=?')
+          .bind(id),
+        db
+          .prepare('UPDATE sessions SET revision=lower(hex(randomblob(16))) WHERE revision=?')
+          .bind(sentinel),
+        db
+          .prepare(
+            'INSERT INTO search_docs SELECT session_id,message_id,role,text,updated_at FROM staged_docs WHERE owner=?'
+          )
+          .bind(id)
       )
     }
     statements.push(
@@ -758,7 +875,7 @@ async function handleImports(request, db, parts, method) {
       bumpVersion(db),
       bumpGeneration(db)
     )
-    await db.batch(statements)
+    await atomicBatch(db, statements)
     return json({ ...(await stateOf(db)), importedCount, skippedCount })
   }
 
@@ -801,7 +918,9 @@ async function handleImports(request, db, parts, method) {
           const value = JSON.stringify(session)
           bytes += value.length
           statements.push(
-            db.prepare('UPDATE staged_sessions SET json=? WHERE owner=? AND id=?').bind(value, id, row.id)
+            db
+              .prepare('UPDATE staged_sessions SET json=? WHERE owner=? AND id=?')
+              .bind(value, id, row.id)
           )
           // 单批不超过 ~2MB，避免一次 batch 的 payload 过大。
           if (bytes > 2_000_000) {
@@ -836,7 +955,9 @@ async function handleImports(request, db, parts, method) {
       validateSession(session, session?.id)
       statements.push(
         db
-          .prepare('INSERT OR REPLACE INTO staged_sessions (owner,id,json,has_files) VALUES (?,?,?,?)')
+          .prepare(
+            'INSERT OR REPLACE INTO staged_sessions (owner,id,json,has_files) VALUES (?,?,?,?)'
+          )
           .bind(id, session.id, JSON.stringify(session), hasFiles(session)),
         db.prepare('DELETE FROM staged_docs WHERE owner=? AND session_id=?').bind(id, session.id)
       )
@@ -859,7 +980,9 @@ async function handleImports(request, db, parts, method) {
       const updatedAt = Number.isFinite(session.updatedAt) ? session.updatedAt : 0
       await db.batch([
         db
-          .prepare('INSERT OR REPLACE INTO staged_sessions (owner,id,json,has_files) VALUES (?,?,?,?)')
+          .prepare(
+            'INSERT OR REPLACE INTO staged_sessions (owner,id,json,has_files) VALUES (?,?,?,?)'
+          )
           .bind(id, entryId, JSON.stringify(session), hasFiles(session)),
         db.prepare('DELETE FROM staged_docs WHERE owner=? AND session_id=?').bind(id, entryId),
         ...extractSearchDocs(session).map((doc) =>
@@ -900,7 +1023,8 @@ const FILE_PATH = /^\/anthropic\/v1\/files\/[A-Za-z0-9_-]{1,256}$/
 
 async function handleApi(request, env, url) {
   const path = url.pathname.slice('/api'.length)
-  const allowed = API_ROUTES.get(path) === request.method || (request.method === 'DELETE' && FILE_PATH.test(path))
+  const allowed =
+    API_ROUTES.get(path) === request.method || (request.method === 'DELETE' && FILE_PATH.test(path))
   if (!allowed) fail(404, 'API endpoint not found')
 
   const base = new URL(env.DEEPSEEK_API_BASE_URL || 'https://api.deepseek.com')
@@ -917,6 +1041,7 @@ async function handleApi(request, env, url) {
   const upstream = await fetch(base, {
     method: request.method,
     headers,
+    redirect: 'manual',
     body: streaming ? request.body : undefined,
     // Node 的 undici 要求流式请求体显式声明；Workers 运行时会忽略这个字段。
     ...(streaming ? { duplex: 'half' } : {}),
@@ -932,7 +1057,8 @@ async function handleApi(request, env, url) {
 
 // ---------- 登录 ----------
 
-const loginPage = (csrf, message = '') => html(`<!doctype html>
+const loginPage = (csrf, message = '') =>
+  html(`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>登录 · DeepSeek 聊天</title>
@@ -1008,8 +1134,7 @@ const logout = () =>
 
 // ---------- 入口 ----------
 
-const needsAuth = (path) =>
-  path.startsWith('/data/') || path.startsWith('/api/')
+const needsAuth = (path) => path.startsWith('/data/') || path.startsWith('/api/')
 
 export default {
   async fetch(request, env) {
@@ -1030,7 +1155,8 @@ export default {
         if (url.pathname.startsWith('/data/')) {
           if (request.headers.get('x-chat-request') !== '1') fail(403, '缺少请求标记。')
           const origin = request.headers.get('origin')
-          if (request.method !== 'GET' && origin && origin !== url.origin) fail(403, '跨域请求被拒绝。')
+          if (request.method !== 'GET' && origin && origin !== url.origin)
+            fail(403, '跨域请求被拒绝。')
         }
         if (url.pathname.startsWith('/api/')) return await handleApi(request, env, url)
         return await handleData(request, env, url)
@@ -1038,13 +1164,19 @@ export default {
       if (env.ASSETS) return env.ASSETS.fetch(request)
       return new Response('Not found', { status: 404 })
     } catch (error) {
-      if (error instanceof HttpError) return json({ error: { message: error.message } }, error.status)
+      if (error instanceof HttpError)
+        return json({ error: { message: error.message } }, error.status)
       const message = error instanceof Error ? error.message : String(error)
       console.error(message)
       // 建表没跑时 D1 会报 no such table；直接告诉用户去执行迁移，比“内部错误”有用。
       if (/no such table/i.test(message)) {
         return json(
-          { error: { message: '数据库尚未初始化：请执行 cloudflare/schema.sql 或 wrangler d1 migrations apply DB' } },
+          {
+            error: {
+              message:
+                '数据库尚未初始化：请执行 cloudflare/schema.sql 或 wrangler d1 migrations apply DB',
+            },
+          },
           503
         )
       }

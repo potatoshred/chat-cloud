@@ -265,14 +265,17 @@ export const bindChatPersistence = () => {
   // Persist partial replies regularly while the owning device receives the stream.
   // 免费版把间隔拉长：每次落盘都会写会话 + 搜索索引，D1 的写额度经不起 2 秒一次。
   const checkpoint = SERVER_API
-    ? window.setInterval(() => {
-        if (!get().importingHistory) {
-          for (const [id, flush] of streamFlushes) {
-            flush()
-            persist(id)
+    ? window.setInterval(
+        () => {
+          if (!get().importingHistory) {
+            for (const [id, flush] of streamFlushes) {
+              flush()
+              persist(id)
+            }
           }
-        }
-      }, EDGE_API ? 10_000 : 2000)
+        },
+        EDGE_API ? 10_000 : 2000
+      )
     : undefined
   return () => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -797,8 +800,7 @@ export const continueReply = (sessionId: string, messageId: string) => {
     model: previous.model ?? model,
     thinking: previous.thinking ?? thinking,
     reasoningEffort:
-      previous.reasoningEffort ??
-      ((previous.thinking ?? thinking) ? reasoningEffort : undefined),
+      previous.reasoningEffort ?? ((previous.thinking ?? thinking) ? reasoningEffort : undefined),
     search: previous.search ?? search,
     status: 'pending',
     stopReason: undefined,
@@ -1107,7 +1109,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             messages,
             thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
             ...(initial.thinking
-              ? { output_config: { effort: settings.reasoningEffort } }
+              ? { output_config: { effort: initial.reasoningEffort ?? settings.reasoningEffort } }
               : {}),
             safety_check: SAFETY_CHECK,
             tools: serverTools(initial.search ?? false),

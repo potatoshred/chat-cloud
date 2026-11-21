@@ -6,9 +6,10 @@ import { test } from 'node:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { createDataStore } from './data-store.mjs'
 import { createAuthServer, loadAuthConfig, validateConfig } from './server.mjs'
-import { createApiProxy, MAX_API_BODY } from './api-proxy.mjs'
+import { createApiProxy, MAX_API_BODY, MAX_FILE_BODY } from './api-proxy.mjs'
 import { PASSWORD_OPTIONS, verifyPassword } from './password.mjs'
 
 const password = 'test-only-long-password-测试'
@@ -581,7 +582,53 @@ test('proxy limits upload size and returns upstream errors without following red
   const redirect = await f.request('/api/models', { headers: apiHeaders })
   assert.equal(redirect.status, 302)
   assert.equal(redirect.headers.get('location'), null)
-  const oversized = await new Promise((resolve, reject) => {
+  const oversized = (path, limit) =>
+    new Promise((resolve, reject) => {
+      const request = httpRequest(
+        f.base + path,
+        {
+          method: 'POST',
+          agent: false,
+          headers: {
+            ...apiHeaders,
+            Cookie: [...f.jar].map(([name, value]) => `${name}=${value}`).join('; '),
+            'Content-Length': limit + 1,
+          },
+        },
+        (response) => {
+          response.resume()
+          resolve(response.statusCode)
+        }
+      )
+      request.on('error', reject)
+      request.end()
+    })
+  assert.equal(await oversized('/api/anthropic/v1/files', MAX_FILE_BODY), 413)
+  assert.equal(await oversized('/api/anthropic/v1/messages', MAX_API_BODY), 413)
+  assert.equal(calls, 2)
+})
+
+test('proxy accepts a 64 MiB attachment with multipart overhead', { timeout: 15000 }, async (t) => {
+  let received = 0
+  const upstream = await upstreamFixture(t, async (request, response) => {
+    for await (const chunk of request) received += chunk.length
+    response.setHeader('Content-Type', 'application/json')
+    response.end('{"ok":true}')
+  })
+  const f = await fixture(
+    t,
+    {},
+    { apiProxy: createApiProxy({ apiKey: serverKey, baseURL: upstream.baseURL }) }
+  )
+  await f.login()
+  const boundary = 'large-attachment-test'
+  const prefix = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="large.png"\r\nContent-Type: image/png\r\n\r\n`
+  )
+  const suffix = Buffer.from(`\r\n--${boundary}--\r\n`)
+  const fileSize = 64 * 1024 * 1024
+  const chunk = Buffer.alloc(64 * 1024, 7)
+  const status = await new Promise((resolve, reject) => {
     const request = httpRequest(
       f.base + '/api/anthropic/v1/files',
       {
@@ -589,19 +636,30 @@ test('proxy limits upload size and returns upstream errors without following red
         headers: {
           ...apiHeaders,
           Cookie: [...f.jar].map(([name, value]) => `${name}=${value}`).join('; '),
-          'Content-Length': MAX_API_BODY + 1,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': prefix.length + fileSize + suffix.length,
         },
       },
       (response) => {
+        response.on('error', reject)
         response.resume()
-        resolve(response.statusCode)
+        response.on('end', () => resolve(response.statusCode))
       }
     )
     request.on('error', reject)
-    request.end()
+    const source = Readable.from(
+      (function* () {
+        yield prefix
+        for (let offset = 0; offset < fileSize; offset += chunk.length) yield chunk
+        yield suffix
+      })()
+    )
+    source.on('error', reject)
+    request.on('close', () => source.destroy())
+    source.pipe(request)
   })
-  assert.equal(oversized, 413)
-  assert.equal(calls, 2)
+  assert.equal(status, 200)
+  assert.equal(received, prefix.length + fileSize + suffix.length)
 })
 
 test('automatic origin supports public HTTPS and rejects origin forgery and challenge reuse across hosts', async (t) => {
@@ -905,7 +963,11 @@ test('append import skips duplicate ids, adds new ids, and keeps drafts, revisio
     (
       await f.request('/data/files/original', {
         method: 'PUT',
-        headers: { ...apiHeaders, 'X-Chat-Generation': originalGeneration, 'Content-Type': 'image/png' },
+        headers: {
+          ...apiHeaders,
+          'X-Chat-Generation': originalGeneration,
+          'Content-Type': 'image/png',
+        },
         body: bytesA,
       })
     ).status,
@@ -917,7 +979,10 @@ test('append import skips duplicate ids, adds new ids, and keeps drafts, revisio
   const conflicting = storedSession('shared-chat')
   conflicting.title = '恶意覆盖'
   assert.equal((await f.data(`imports/${id}/sessions/shared-chat`, 'PUT', conflicting)).status, 200)
-  assert.equal((await f.data(`imports/${id}/sessions/imported`, 'PUT', storedSession('imported'))).status, 200)
+  assert.equal(
+    (await f.data(`imports/${id}/sessions/imported`, 'PUT', storedSession('imported'))).status,
+    200
+  )
   const bytesB = Buffer.from([9, 9, 9, 9])
   assert.equal(
     (
@@ -932,10 +997,7 @@ test('append import skips duplicate ids, adds new ids, and keeps drafts, revisio
 
   const result = await f.data(`imports/${id}/commit`, 'POST', { mode: 'append' })
   assert.equal(result.status, 200)
-  assert.deepEqual(
-    result.value.sessions.map((s) => s.id).sort(),
-    ['imported', 'shared-chat']
-  )
+  assert.deepEqual(result.value.sessions.map((s) => s.id).sort(), ['imported', 'shared-chat'])
   assert.equal(result.value.importedCount, 1)
   assert.equal(result.value.skippedCount, 1)
   assert.notEqual(result.value.generation, originalGeneration)
@@ -951,11 +1013,13 @@ test('append import skips duplicate ids, adds new ids, and keeps drafts, revisio
   assert.deepEqual(Buffer.from(await original.arrayBuffer()), bytesA)
   // Old generation is invalidated.
   assert.equal(
-    (await f.data('sessions/shared-chat', 'PUT', {
-      generation: originalGeneration,
-      revision: existingRevision,
-      session: kept.session,
-    })).status,
+    (
+      await f.data('sessions/shared-chat', 'PUT', {
+        generation: originalGeneration,
+        revision: existingRevision,
+        session: kept.session,
+      })
+    ).status,
     409
   )
 })
@@ -982,7 +1046,10 @@ test('append import with only duplicate ids changes nothing but still rotates ge
   assert.equal(result.status, 200)
   assert.equal(result.value.importedCount, 0)
   assert.equal(result.value.skippedCount, 1)
-  assert.deepEqual(result.value.sessions.map((s) => s.id), ['shared-chat'])
+  assert.deepEqual(
+    result.value.sessions.map((s) => s.id),
+    ['shared-chat']
+  )
   assert.equal((await f.data('sessions/shared-chat')).value.session.title, '跨设备聊天')
   assert.equal((await f.data('drafts')).value.drafts[0].draft.text, 'draft survives')
   assert.notEqual(result.value.generation, state.generation)
@@ -1025,16 +1092,10 @@ test('sessions can be staged in one batch request and committed', async (t) => {
   assert.equal((await f.data(`imports/${id}/sessions`, 'PUT', batch)).status, 200)
   // Malformed batch is rejected without staging anything.
   const bad = (await f.data('imports', 'POST')).value.id
-  assert.equal(
-    (await f.data(`imports/${bad}/sessions`, 'PUT', { id: 'not-an-array' })).status,
-    400
-  )
+  assert.equal((await f.data(`imports/${bad}/sessions`, 'PUT', { id: 'not-an-array' })).status, 400)
   const result = await f.data(`imports/${id}/commit`, 'POST', { mode: 'append' })
   assert.equal(result.status, 200)
-  assert.deepEqual(
-    result.value.sessions.map((s) => s.id).sort(),
-    ['batch-a', 'batch-b', 'batch-c']
-  )
+  assert.deepEqual(result.value.sessions.map((s) => s.id).sort(), ['batch-a', 'batch-b', 'batch-c'])
   assert.equal(result.value.importedCount, 3)
   assert.equal(result.value.skippedCount, 0)
   for (const session of batch) {
@@ -1055,10 +1116,16 @@ test('a malformed session in a batch fails cleanly without leaving the db in a b
   assert.equal((await f.data('state')).status, 200)
   assert.equal((await f.data('drafts')).status, 200)
   // A fresh batch still stages and commits correctly.
-  assert.equal((await f.data(`imports/${bad}/sessions`, 'PUT', [storedSession('good')])).status, 200)
+  assert.equal(
+    (await f.data(`imports/${bad}/sessions`, 'PUT', [storedSession('good')])).status,
+    200
+  )
   const result = await f.data(`imports/${bad}/commit`, 'POST', { mode: 'append' })
   assert.equal(result.status, 200)
-  assert.deepEqual(result.value.sessions.map((s) => s.id), ['good'])
+  assert.deepEqual(
+    result.value.sessions.map((s) => s.id),
+    ['good']
+  )
 })
 
 test('settings accept model and reasoning effort but reject invalid values', async (t) => {
@@ -1131,9 +1198,7 @@ test('session search matches titles and message text across chats', async (t) =>
   assert.match(byText.value.hits[0].snippet, /固体推进剂/)
 
   const byTitle = await f.data('search', 'POST', { query: '烹饪' })
-  assert.ok(
-    byTitle.value.hits.some((hit) => hit.sessionId === 'chat-two' && hit.role === 'title')
-  )
+  assert.ok(byTitle.value.hits.some((hit) => hit.sessionId === 'chat-two' && hit.role === 'title'))
 
   assert.equal((await f.data('search', 'POST', { query: '   ' })).value.hits.length, 0)
   assert.equal((await f.data('search', 'POST', { query: 'x'.repeat(201) })).status, 400)
@@ -1201,7 +1266,9 @@ test('usage reports the last 24 hours of assistant replies', async (t) => {
     output_tokens: output,
     cache_creation_input_tokens: cacheCreate,
     cache_read_input_tokens: cacheRead,
-    ...(searches === undefined ? {} : { server_tool_use: { web_search_requests: searches, tool_search: 0 } }),
+    ...(searches === undefined
+      ? {}
+      : { server_tool_use: { web_search_requests: searches, tool_search: 0 } }),
   })
   const reply = (id, status, createdAt, extras = {}) => ({
     id,

@@ -3,6 +3,8 @@ import { request as httpsRequest } from 'node:https'
 import { Transform } from 'node:stream'
 
 export const MAX_API_BODY = 32 * 1024 * 1024
+// A 64 MiB attachment also needs room for multipart fields, headers and boundaries.
+export const MAX_FILE_BODY = 65 * 1024 * 1024
 const FILE_PATH = /^\/anthropic\/v1\/files\/[A-Za-z0-9_-]{1,256}$/
 const ROUTES = new Map([
   ['/models', 'GET'],
@@ -18,8 +20,16 @@ export function createApiProxy({ apiKey, baseURL = 'https://api.deepseek.com' })
     throw new Error('Set DEEPSEEK_API_KEY to a valid API key')
   }
   const base = new URL(baseURL)
-  if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
-    throw new Error('DEEPSEEK_API_BASE_URL must be an HTTP(S) URL without credentials, query, or fragment')
+  if (
+    !['https:', 'http:'].includes(base.protocol) ||
+    base.username ||
+    base.password ||
+    base.search ||
+    base.hash
+  ) {
+    throw new Error(
+      'DEEPSEEK_API_BASE_URL must be an HTTP(S) URL without credentials, query, or fragment'
+    )
   }
   const prefix = base.pathname.replace(/\/$/, '')
   let active = 0
@@ -27,18 +37,33 @@ export function createApiProxy({ apiKey, baseURL = 'https://api.deepseek.com' })
   return async (request, response) => {
     const fail = (status, message) => {
       if (response.destroyed) return
-      if (response.headersSent) { response.destroy(); return }
+      if (response.headersSent) {
+        response.destroy()
+        return
+      }
       response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
       response.end(JSON.stringify({ error: { message } }))
     }
     const path = request.url.slice('/api'.length)
-    if (!(ROUTES.get(path) === request.method || (request.method === 'DELETE' && FILE_PATH.test(path)))) {
-      fail(404, 'API endpoint not found'); return
+    if (
+      !(
+        ROUTES.get(path) === request.method ||
+        (request.method === 'DELETE' && FILE_PATH.test(path))
+      )
+    ) {
+      fail(404, 'API endpoint not found')
+      return
     }
-    if (Number(request.headers['content-length'] ?? 0) > MAX_API_BODY) {
-      fail(413, 'Request exceeds the 32 MiB upload limit'); return
+    const maxBody = path === '/anthropic/v1/files' ? MAX_FILE_BODY : MAX_API_BODY
+    const sizeError = `Request exceeds the ${maxBody / (1024 * 1024)} MiB request limit`
+    if (Number(request.headers['content-length'] ?? 0) > maxBody) {
+      fail(413, sizeError)
+      return
     }
-    if (active >= 8) { fail(429, 'Too many concurrent API requests'); return }
+    if (active >= 8) {
+      fail(429, 'Too many concurrent API requests')
+      return
+    }
 
     const target = new URL(base)
     target.pathname = prefix + path
@@ -53,23 +78,34 @@ export function createApiProxy({ apiKey, baseURL = 'https://api.deepseek.com' })
     try {
       await new Promise((resolve) => {
         let upstream
-        const finish = () => { upstream?.destroy(); resolve() }
+        const finish = () => {
+          upstream?.destroy()
+          resolve()
+        }
         response.once('finish', finish)
         response.once('close', finish)
-        upstream = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, {
-          method: request.method, headers,
-        }, (result) => {
-          const returned = { 'X-Accel-Buffering': 'no' }
-          // Never relay upstream cookies, redirects, or credential-bearing headers.
-          for (const name of ['content-type', 'content-encoding', 'retry-after']) {
-            if (result.headers[name]) returned[name] = result.headers[name]
+        upstream = (target.protocol === 'https:' ? httpsRequest : httpRequest)(
+          target,
+          {
+            method: request.method,
+            headers,
+          },
+          (result) => {
+            const returned = { 'X-Accel-Buffering': 'no' }
+            // Never relay upstream cookies, redirects, or credential-bearing headers.
+            for (const name of ['content-type', 'content-encoding', 'retry-after']) {
+              if (result.headers[name]) returned[name] = result.headers[name]
+            }
+            if (response.destroyed) {
+              result.destroy()
+              return
+            }
+            response.writeHead(result.statusCode ?? 502, returned)
+            response.flushHeaders()
+            result.on('error', () => fail(502, 'Upstream response interrupted'))
+            result.pipe(response)
           }
-          if (response.destroyed) { result.destroy(); return }
-          response.writeHead(result.statusCode ?? 502, returned)
-          response.flushHeaders()
-          result.on('error', () => fail(502, 'Upstream response interrupted'))
-          result.pipe(response)
-        })
+        )
         upstream.setTimeout(300_000, () => upstream.destroy(new Error('Upstream timeout')))
         upstream.on('error', () => fail(502, 'Unable to reach the configured API service'))
         request.once('aborted', () => upstream.destroy())
@@ -77,14 +113,14 @@ export function createApiProxy({ apiKey, baseURL = 'https://api.deepseek.com' })
         const limit = new Transform({
           transform(chunk, encoding, callback) {
             uploaded += chunk.length
-            if (uploaded > MAX_API_BODY) callback(new Error('Upload limit exceeded'))
+            if (uploaded > maxBody) callback(new Error('Upload limit exceeded'))
             else callback(null, chunk)
           },
         })
         limit.on('error', () => {
           request.unpipe(limit)
           request.resume()
-          fail(413, 'Request exceeds the 32 MiB upload limit')
+          fail(413, sizeError)
           upstream.destroy()
         })
         request.on('error', () => upstream.destroy())
