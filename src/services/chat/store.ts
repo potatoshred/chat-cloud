@@ -136,6 +136,49 @@ const sessionLoads = new Map<string, { promise: Promise<void> }>()
 
 const touchSession = (id: string) => sessionAccess.set(id, ++accessSequence)
 
+/** 记住当前会话，使刷新/重新打开页面后能接着上次的对话。仅保存在本浏览器。 */
+const ACTIVE_SESSION_KEY = 'chat-active-session'
+const readRememberedSession = () => {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage.getItem(ACTIVE_SESSION_KEY)
+  } catch {
+    return null
+  }
+}
+const rememberSession = (id: string | null) => {
+  try {
+    if (typeof localStorage === 'undefined') {
+      return
+    }
+    if (id === null) {
+      localStorage.removeItem(ACTIVE_SESSION_KEY)
+    } else {
+      localStorage.setItem(ACTIVE_SESSION_KEY, id)
+    }
+  } catch {
+    // 隐私模式或存储被禁用时，退回每次都进入新会话。
+  }
+}
+const clearRememberedSession = (id?: string) => {
+  if (id === undefined || readRememberedSession() === id) {
+    rememberSession(null)
+  }
+}
+const restoreRememberedSession = (summaries: SessionSummary[]) => {
+  const id = readRememberedSession()
+  if (!id) {
+    return
+  }
+  if (!summaries.some((summary) => summary.id === id)) {
+    rememberSession(null)
+    return
+  }
+  touchSession(id)
+  set({ activeId: id })
+  void ensureSessionLoaded(id)
+  trimSessionCache()
+}
+
 const trimSessionCache = () => {
   const state = get()
   const ids = Object.keys(state.sessionCache)
@@ -346,6 +389,7 @@ export const initChat = (): Promise<void> => {
       const summaries = await db.loadSessionSummaries()
       if (epoch === historyEpoch) {
         set({ ready: true, sessions: sortSessions(summaries) })
+        restoreRememberedSession(summaries)
       }
     } catch (error) {
       if (epoch === historyEpoch) {
@@ -483,6 +527,7 @@ export const replaceHistory = async (
       sessionSaveErrors: {},
       activeId: null,
     })
+    rememberSession(null)
     return importedCount
   } finally {
     set({ importingHistory: false })
@@ -500,6 +545,7 @@ export const replaceHistory = async (
 export const newChat = () => {
   if (!get().importingHistory) {
     set({ activeId: null })
+    rememberSession(null)
     trimSessionCache()
   }
 }
@@ -519,6 +565,7 @@ export const prefetchSession = (id: string) => {
 export const selectSession = (id: string) => {
   if (!get().importingHistory && get().sessions.some((session) => session.id === id)) {
     touchSession(id)
+    rememberSession(id)
     set({ activeId: id })
     void ensureSessionLoaded(id)
     if (SERVER_API) {
@@ -537,6 +584,7 @@ export const revealMessage = (sessionId: string, messageId: string) => {
     return
   }
   touchSession(sessionId)
+  rememberSession(sessionId)
   set({ activeId: sessionId })
   trimSessionCache()
   void (async () => {
@@ -616,6 +664,7 @@ const removeSessionData = async (id: string): Promise<boolean> => {
       ),
       activeId: state.activeId === id ? null : state.activeId,
     }))
+    clearRememberedSession(id)
     return true
   } catch (error) {
     db.reportStorageError('delete session')(error)
@@ -672,6 +721,7 @@ export const sendMessage = (targetSessionId: string | null) => {
       sessionCache: { ...state.sessionCache, [session.id]: session },
       activeId: session.id,
     }))
+    rememberSession(session.id)
   }
   const current = getSession(sessionId)
   if (!current) {
@@ -1301,6 +1351,8 @@ const refreshRemoteHistory = async () => {
     const active = get().activeId
     if (active !== null) {
       await ensureSessionLoaded(active)
+    } else {
+      clearRememberedSession()
     }
   } catch {
     /* Preserve the last good view while offline; writes surface their own errors. */
